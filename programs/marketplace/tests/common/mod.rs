@@ -436,11 +436,80 @@ pub fn process(
     payer: &Keypair,
     signers: &[&Keypair],
 ) -> Result<TransactionMetadata, FailedTransactionMetadata> {
+    process_ixs(svm, &[ix], payer, signers)
+}
+
+pub fn process_ixs(
+    svm: &mut LiteSVM,
+    ixs: &[Instruction],
+    payer: &Keypair,
+    signers: &[&Keypair],
+) -> Result<TransactionMetadata, FailedTransactionMetadata> {
     svm.expire_blockhash();
     let blockhash = svm.latest_blockhash();
-    let msg = Message::new_with_blockhash(&[ix], Some(&payer.pubkey()), &blockhash);
+    let msg = Message::new_with_blockhash(ixs, Some(&payer.pubkey()), &blockhash);
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), signers).unwrap();
     svm.send_transaction(tx)
+}
+
+/// The compute budget a client must request alongside `accept_offer`: PDA
+/// and ATA derivation costs vary with the account keys, so the 200k default
+/// leaves no safe margin for unlucky ones.
+pub const ACCEPT_OFFER_BUDGET: u32 = 300_000;
+
+/// `SetComputeUnitLimit`, hand-encoded (discriminant 2 + units), so the
+/// tests carry no extra dependency for one fixed instruction.
+pub fn set_compute_limit_ix(units: u32) -> Instruction {
+    let mut data = vec![2u8];
+    data.extend_from_slice(&units.to_le_bytes());
+    Instruction::new_with_bytes(
+        "ComputeBudget111111111111111111111111111111"
+            .parse()
+            .unwrap(),
+        &data,
+        vec![],
+    )
+}
+
+/// Send an instruction with the explicit `accept_offer` compute budget, the
+/// way a client sends it.
+pub fn process_with_budget(
+    svm: &mut LiteSVM,
+    ix: Instruction,
+    payer: &Keypair,
+    signers: &[&Keypair],
+) -> Result<TransactionMetadata, FailedTransactionMetadata> {
+    process_ixs(
+        svm,
+        &[set_compute_limit_ix(ACCEPT_OFFER_BUDGET), ix],
+        payer,
+        signers,
+    )
+}
+
+pub fn ok_with_budget(svm: &mut LiteSVM, ix: Instruction, payer: &Keypair, signers: &[&Keypair]) {
+    if let Err(failed) = process_with_budget(svm, ix, payer, signers) {
+        panic!("expected success, failed with: {:?}", failed.err);
+    }
+}
+
+pub fn fails_with_budget(
+    svm: &mut LiteSVM,
+    ix: Instruction,
+    payer: &Keypair,
+    signers: &[&Keypair],
+    expected: &str,
+) {
+    match process_with_budget(svm, ix, payer, signers) {
+        Ok(_) => panic!("expected failure `{expected}`, but it succeeded"),
+        Err(failed) => {
+            let detail = format!("{:?}\n{}", failed.err, failed.meta.logs.join("\n"));
+            assert!(
+                detail.contains(expected),
+                "expected `{expected}`, got:\n{detail}"
+            );
+        }
+    }
 }
 
 pub fn ok(svm: &mut LiteSVM, ix: Instruction, payer: &Keypair, signers: &[&Keypair]) {

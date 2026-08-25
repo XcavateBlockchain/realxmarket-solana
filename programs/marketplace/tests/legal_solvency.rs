@@ -525,6 +525,15 @@ proptest! {
                 &cranker,
                 &[&cranker],
             );
+            // The recorded fee quote is the floored round trip of what each
+            // mint collected, so once the refunds are out the retained pots
+            // always cover the SPV lawyer: settling every mint clears the debt.
+            if account_alive(&svm, &listing_pda(0)) {
+                let listing = listing_of(&svm, 0);
+                if listing.status == ListingStatus::Cancelled && listing.sold_share_amount == 0 {
+                    prop_assert_eq!(listing.spv_costs_due, 0);
+                }
+            }
             let _ = process(
                 &mut svm,
                 withdraw_deposit_ix(&developer.pubkey(), 0),

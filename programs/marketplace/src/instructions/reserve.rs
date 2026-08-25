@@ -156,19 +156,12 @@ pub fn reserve_shares_handler(
         );
     }
     // Ownership cap against everything the position would control, held or
-    // reserved, floored then strictly below.
+    // reserved.
     let owned_after = (ctx.accounts.position.share_amount as u64)
         .checked_add(ctx.accounts.position.reserved_share_amount as u64)
         .and_then(|owned| owned.checked_add(amount as u64))
         .ok_or(MarketplaceError::Overflow)?;
-    let max_shares = (listing.max_ownership_bps as u64)
-        .checked_mul(ctx.accounts.property.share_amount as u64)
-        .ok_or(MarketplaceError::Overflow)?
-        / 10_000;
-    require!(
-        owned_after < max_shares,
-        MarketplaceError::MaxOwnershipExceeded
-    );
+    listing.require_below_ownership_cap(owned_after, ctx.accounts.property.share_amount)?;
 
     let (funds, fee, tax) = crate::instructions::buy::price_purchase(
         listing,

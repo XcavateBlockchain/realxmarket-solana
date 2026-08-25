@@ -354,3 +354,63 @@ fn buy_scales_to_six_decimal_mint() {
     let vault_state = StateWithExtensions::<TokenAccountState>::unpack(&vault_acc.data).unwrap();
     assert_eq!(vault_state.base.amount, total_of(10) / 1_000);
 }
+
+// The recorded fee quote is the cap on the SPV lawyer's costs, and on a
+// cancellation the retained fee is all they can be paid from. So it must
+// state what the vault actually holds: the round trip through the mint's
+// decimals, not the unfloored quote.
+#[test]
+fn direct_buy_records_only_the_fee_actually_held() {
+    let (mut svm, admin, _authority) = setup();
+    let operator = funded(&mut svm);
+    seed_region(&mut svm, 1, &operator.pubkey());
+    seed_location(&mut svm, 1, POSTCODE);
+    let developer = new_developer(&mut svm, &admin);
+    ok(
+        &mut svm,
+        list_ix(&developer.pubkey(), 0),
+        &developer,
+        &[&developer],
+    );
+    ok(
+        &mut svm,
+        init_assets_ix(&developer.pubkey(), 0),
+        &developer,
+        &[&developer],
+    );
+    // A price that doesn't divide into six-decimal units, so the 1% fee
+    // floors when it scales to the mint.
+    ok(
+        &mut svm,
+        upgrade_ix(&developer.pubkey(), 0, 5_000_000_333),
+        &developer,
+        &[&developer],
+    );
+    acquire_many(&mut svm, &admin, &[]);
+
+    let sponsor = sponsor();
+    let investor = new_investor(&mut svm, &admin);
+    give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
+    let vault_ata = payment_ata(&listing_vault_pda(0), &gbp6_mint());
+    ok(
+        &mut svm,
+        buy_ix_with_mint(
+            &investor.pubkey(),
+            &sponsor.pubkey(),
+            0,
+            1,
+            u64::MAX,
+            gbp6_mint(),
+            gbp6_acc(&investor.pubkey()),
+            vault_ata,
+        ),
+        &sponsor,
+        &[&sponsor, &investor],
+    );
+
+    // Fee at 9 decimals is 50_000_003; in the vault it is 50_000 six-decimal
+    // units, which restates as 50_000_000. The trailing 3 never arrived.
+    let listing = listing_of(&svm, 0);
+    assert_eq!(listing.collected[0].fee, 50_000);
+    assert_eq!(listing.collected_fee_quote, 50_000_000);
+}

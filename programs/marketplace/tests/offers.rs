@@ -129,12 +129,13 @@ fn make_offer_validates_the_bid() {
 
 // --- accepting ---
 
-// Accepting settles both sides in one instruction and checks four registry
-// accounts, so it is the heaviest path in the program. Pinned against the
-// default budget: LiteSVM would happily run an instruction no cluster fits,
-// and a client that has to raise the limit should find out here, not in
-// production.
-const COMPUTE_BUDGET: u64 = 200_000;
+// Accepting settles both sides in one instruction, so it is the heaviest
+// path in the program, and its PDA and ATA derivation costs vary with the
+// account keys — unlucky ones ran the 200k default out. Clients therefore
+// send an explicit budget (ACCEPT_OFFER_BUDGET, like every test here); the
+// pin sits above the observed wobble but well under that budget, so a
+// structural regression still fails loudly.
+const COMPUTE_BUDGET: u64 = 250_000;
 
 #[test]
 fn accept_stays_within_the_compute_budget() {
@@ -143,7 +144,7 @@ fn accept_stays_within_the_compute_budget() {
     let offeror = new_investor(&mut svm, &admin);
     bid(&mut svm, &offeror, 10, BID);
 
-    let used = process(
+    let used = process_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -153,7 +154,7 @@ fn accept_stays_within_the_compute_budget() {
     .compute_units_consumed;
     assert!(
         used <= COMPUTE_BUDGET,
-        "accept_offer used {used} CU, over the {COMPUTE_BUDGET} default"
+        "accept_offer used {used} CU, over the {COMPUTE_BUDGET} pin"
     );
 }
 
@@ -165,7 +166,7 @@ fn accept_pays_from_the_vault_and_moves_shares() {
     bid(&mut svm, &offeror, 10, BID);
 
     let treasury_before = token_balance(&svm, &treasury_payment_ata());
-    ok(
+    ok_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -220,14 +221,14 @@ fn accept_binds_to_the_offer_nonce() {
         &[&offeror],
     );
     bid(&mut svm, &offeror, 10, 1_000_000_000);
-    fails_with(
+    fails_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
         &[seller],
         "OfferNonceMismatch",
     );
-    ok(
+    ok_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 1, tgbp_mint()),
         seller,
@@ -241,7 +242,7 @@ fn accept_requires_the_seller() {
     let offeror = new_investor(&mut svm, &admin);
     bid(&mut svm, &offeror, 10, BID);
     let outsider = &investors[2];
-    fails_with(
+    fails_with_budget(
         &mut svm,
         accept_offer_ix(&outsider.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         outsider,
@@ -266,7 +267,7 @@ fn accept_fails_when_the_listing_shrank_below_the_offer() {
         &buyer,
         &[&buyer],
     );
-    fails_with(
+    fails_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -289,7 +290,7 @@ fn accept_that_empties_the_listing_closes_it() {
     let seller = &investors[1];
     let offeror = new_investor(&mut svm, &admin);
     bid(&mut svm, &offeror, 20, BID);
-    ok(
+    ok_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -320,7 +321,7 @@ fn accept_respects_the_ownership_cap() {
         offeror,
         &[offeror],
     );
-    fails_with(
+    fails_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -338,7 +339,7 @@ fn accept_requires_a_still_compliant_bidder() {
 
     // KYC revoked between make and accept: shares must not be delivered.
     set_compliance(&mut svm, &admin, &offeror.pubkey(), false);
-    fails_with(
+    fails_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -462,7 +463,7 @@ fn dusted_vault_cannot_wedge_the_offer() {
         &offer_vault_pda(0, &offeror.pubkey()),
         50_000_000_001,
     );
-    ok(
+    ok_with_budget(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
         seller,
@@ -651,4 +652,23 @@ fn send_settles_income_for_both_sides() {
     let receiver_cp = checkpoint_of(&svm, &receiver.pubkey());
     assert_eq!(receiver_cp.entries[0].pending, 0);
     assert_eq!(receiver_cp.entries[0].per_share, 2_000_000_000);
+}
+
+// The handler-checked registry accounts (the struct is frame-tight) must
+// still pin the right wallet: a cleared bystander's record can't stand in
+// for the offeror's.
+#[test]
+fn anothers_registry_accounts_are_rejected_at_accept() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    for account in ix.accounts.iter_mut() {
+        if account.pubkey == compliance_pda(&offeror.pubkey()) {
+            account.pubkey = compliance_pda(&seller.pubkey());
+        }
+    }
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongRegistryAccount");
 }

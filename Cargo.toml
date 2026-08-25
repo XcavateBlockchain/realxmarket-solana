@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "programs/*",
+    "crates/common",
     "deploy/setup"
 ]
 resolver = "2"

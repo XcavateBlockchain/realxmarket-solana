@@ -831,3 +831,43 @@ fn teardown_waits_for_cancelled_positions() {
         .get_account(&listing_pda(0))
         .is_none_or(|a| a.data.is_empty()));
 }
+
+// ===================== the attestation meets expiry =====================
+
+// An expired listing is the withdraw paths' territory: attesting it would
+// promise a claim window the claims themselves refuse.
+#[test]
+fn attesting_an_expired_listing_fails() {
+    let (mut svm, admin, _sponsor, _developer) = setup_listed();
+    let _investors = fill_reserve(&mut svm, &admin);
+    warp(&mut svm, LISTING_DURATION + 1);
+
+    let confirmer = new_confirmer(&mut svm, &admin);
+    fails_with(
+        &mut svm,
+        create_spv_ix(&confirmer.pubkey(), 0),
+        &confirmer,
+        &[&confirmer],
+        "ListingExpired",
+    );
+}
+
+// A late attestation still opens a window, but never one running past the
+// expiry that claims are gated on.
+#[test]
+fn claim_window_never_outruns_the_listing() {
+    let (mut svm, admin, _sponsor, _developer) = setup_listed();
+    let _investors = fill_reserve(&mut svm, &admin);
+    // 30k left on the listing, against a 50k claiming time.
+    warp(&mut svm, LISTING_DURATION - 30_000);
+
+    let confirmer = new_confirmer(&mut svm, &admin);
+    ok(
+        &mut svm,
+        create_spv_ix(&confirmer.pubkey(), 0),
+        &confirmer,
+        &[&confirmer],
+    );
+    let listing = listing_of(&svm, 0);
+    assert_eq!(listing.claim_deadline, listing.listing_expiry);
+}

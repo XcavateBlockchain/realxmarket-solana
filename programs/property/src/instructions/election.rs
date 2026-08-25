@@ -12,6 +12,8 @@ use marketplace::program::Marketplace;
 use marketplace::state::{LockReason, PropertyAsset, ShareHolding};
 use xcavate_whitelist::state::{Role, RoleAccount};
 
+use xcavate_common::election::tally_plurality;
+
 /// Adjust the voter's share lock in the marketplace by the difference between
 /// their old and new vote, under the given reason. The lock lives on the
 /// marketplace ShareHolding, where transfers check it, so the mirror goes
@@ -423,9 +425,8 @@ pub fn finalize_agent_election_handler<'info>(
         ctx.remaining_accounts.len() == election.candidate_count as usize,
         PropertyError::CandidacyMismatch
     );
-    let mut total = 0u64;
-    let mut leader: Option<(Pubkey, u32)> = None;
-    let mut tied = false;
+    let mut powers = Vec::with_capacity(ctx.remaining_accounts.len());
+    let mut candidates = Vec::with_capacity(ctx.remaining_accounts.len());
     for (i, info) in ctx.remaining_accounts.iter().enumerate() {
         require!(
             ctx.remaining_accounts[..i]
@@ -438,24 +439,16 @@ pub fn finalize_agent_election_handler<'info>(
             candidacy.asset_id == asset_id && candidacy.round == election.round,
             PropertyError::CandidacyMismatch
         );
-        total = total
-            .checked_add(candidacy.vote_power as u64)
-            .ok_or(PropertyError::Overflow)?;
-        match leader {
-            Some((_, best)) if candidacy.vote_power == best => tied = true,
-            Some((_, best)) if candidacy.vote_power > best => {
-                tied = false;
-                leader = Some((candidacy.agent, candidacy.vote_power));
-            }
-            None => leader = Some((candidacy.agent, candidacy.vote_power)),
-            _ => {}
-        }
+        powers.push(candidacy.vote_power as u64);
+        candidates.push((candidacy.agent, candidacy.vote_power));
     }
-    let quorum_met =
-        total * 10_000 > ctx.accounts.property.share_amount as u64 * election.quorum_bps as u64;
+    let tally = tally_plurality(powers).ok_or(PropertyError::Overflow)?;
+    let quorum_met = tally.total * 10_000
+        > ctx.accounts.property.share_amount as u64 * election.quorum_bps as u64;
+    let tied = tally.tied;
 
     let mut assigned = false;
-    let (winner, top_power) = leader.unwrap_or_default();
+    let (winner, top_power) = tally.leader.map(|i| candidates[i]).unwrap_or_default();
     if quorum_met && !tied && top_power > 0 && ctx.accounts.letting.agent == Pubkey::default() {
         // The win only sticks if the winner still covers the location; an
         // agent who left mid-election fails the round instead of wedging it.

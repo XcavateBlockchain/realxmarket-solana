@@ -524,19 +524,12 @@ pub fn buy_relisted_shares_handler<'info>(
         MarketplaceError::WrongVaultAccount
     );
 
-    // Ownership cap, against the snapshot taken at listing time. Holdings
-    // must stay strictly below the cap, same rule as the primary sale.
+    // Ownership cap, against the snapshot taken at listing time; same rule
+    // as the primary sale.
     let owned_after = (ctx.accounts.buyer_holding.amount as u64)
         .checked_add(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
-    let max_shares = (primary.max_ownership_bps as u64)
-        .checked_mul(ctx.accounts.property.share_amount as u64)
-        .ok_or(MarketplaceError::Overflow)?
-        / 10_000;
-    require!(
-        owned_after < max_shares,
-        MarketplaceError::MaxOwnershipExceeded
-    );
+    primary.require_below_ownership_cap(owned_after, ctx.accounts.property.share_amount)?;
 
     // Price off the listing snapshots, rescaled to the paid mint. The
     // caller caps the total, so nothing can charge more than they signed
@@ -898,14 +891,7 @@ pub fn send_property_shares_handler<'info>(
     let owned_after = (ctx.accounts.receiver_holding.amount as u64)
         .checked_add(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
-    let max_shares = (primary.max_ownership_bps as u64)
-        .checked_mul(ctx.accounts.property.share_amount as u64)
-        .ok_or(MarketplaceError::Overflow)?
-        / 10_000;
-    require!(
-        owned_after < max_shares,
-        MarketplaceError::MaxOwnershipExceeded
-    );
+    primary.require_below_ownership_cap(owned_after, ctx.accounts.property.share_amount)?;
 
     let sender_key = ctx.accounts.sender.key();
     let receiver_key = ctx.accounts.receiver.key();

@@ -10,7 +10,7 @@ pub mod error;
 pub mod instructions;
 pub mod mint_guard;
 pub mod state;
-pub mod vault;
+pub use xcavate_common::vault;
 
 use anchor_lang::prelude::*;
 

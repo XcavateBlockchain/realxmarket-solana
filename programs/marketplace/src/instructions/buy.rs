@@ -263,20 +263,11 @@ pub fn buy_property_shares_handler(
             MarketplaceError::PaymentMintMismatch
         );
     }
-    // Ownership cap, against the snapshot taken at listing time. Holdings
-    // must stay strictly below the cap (floored to whole shares), so at 50%
-    // of 100 shares an investor tops out at 49.
+    // Ownership cap, against the snapshot taken at listing time.
     let owned_after = (ctx.accounts.holding.amount as u64)
         .checked_add(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
-    let max_shares = (listing.max_ownership_bps as u64)
-        .checked_mul(ctx.accounts.property.share_amount as u64)
-        .ok_or(MarketplaceError::Overflow)?
-        / 10_000;
-    require!(
-        owned_after < max_shares,
-        MarketplaceError::MaxOwnershipExceeded
-    );
+    listing.require_below_ownership_cap(owned_after, ctx.accounts.property.share_amount)?;
 
     // Price the purchase off the listing snapshots, then rescale to the
     // payment mint. The caller caps the total, so neither a price update nor
@@ -416,13 +407,11 @@ pub fn buy_property_shares_handler(
         .ok_or(MarketplaceError::Overflow)?;
 
     let listing = &mut ctx.accounts.listing;
-    let fee_quote = bps_of(
-        listing
-            .share_price
-            .checked_mul(amount as u64)
-            .ok_or(MarketplaceError::Overflow)?,
-        listing.investor_fee_bps,
-    )?;
+    // The round trip through the mint's decimals, same as the claim path, so
+    // the recorded quote never exceeds the fee actually in the vault. The
+    // SPV lawyer's cost cap reads this, and on a cancellation the retained
+    // fee is all there is to pay them from.
+    let fee_quote = scale_from_mint(fee, mint_decimals)?;
     listing.record_collected(ctx.accounts.payment_mint.key(), funds, fee, fee_quote, tax)?;
     if !position_exists {
         listing.position_count = listing

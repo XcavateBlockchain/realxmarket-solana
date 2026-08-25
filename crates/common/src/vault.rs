@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{transfer_checked, TransferChecked};
 
-use crate::constants::CONFIG_SEED;
+/// Every program keeps its vault under its config PDA at this seed.
+const CONFIG_SEED: &[u8] = b"config";
 
 /// Move `amount` XCAV from a user's token account into the protocol vault. The
 /// user is the authority and signs the transaction.

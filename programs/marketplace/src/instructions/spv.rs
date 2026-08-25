@@ -68,14 +68,23 @@ pub fn create_spv_handler(ctx: Context<CreateSpv>, listing_id: u64) -> Result<()
         MarketplaceError::SpvAlreadyCreated
     );
 
+    // Claims check expiry themselves, so an attestation on an expired
+    // listing, or a window running past it, would promise reserved
+    // investors time they don't have.
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        now < ctx.accounts.listing.listing_expiry,
+        MarketplaceError::ListingExpired
+    );
+
     ctx.accounts.property.spv_created = true;
     // The SPV existing is what lets reserved money move: the claim window
     // opens now and direct purchases take over when it ends.
     let listing = &mut ctx.accounts.listing;
-    listing.claim_deadline = Clock::get()?
-        .unix_timestamp
+    listing.claim_deadline = now
         .checked_add(listing.claiming_time)
-        .ok_or(MarketplaceError::Overflow)?;
+        .ok_or(MarketplaceError::Overflow)?
+        .min(listing.listing_expiry);
 
     emit!(SpvCreated {
         listing_id,

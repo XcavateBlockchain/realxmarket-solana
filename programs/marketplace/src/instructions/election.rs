@@ -11,6 +11,8 @@ use crate::state::{
 
 use xcavate_whitelist::state::{Role, RoleAccount};
 
+use xcavate_common::election::tally_plurality;
+
 /// Cast or change a vote in the running SPV lawyer election, weighted by the
 /// shares put behind it. Every vote backs a candidacy; a round that elects
 /// nobody reopens for the next one. The shares lock until
@@ -239,9 +241,8 @@ pub fn finalize_spv_election_handler<'info>(
         ctx.remaining_accounts.len() == election.candidate_count as usize,
         MarketplaceError::CandidacyMismatch
     );
-    let mut total = 0u64;
-    let mut leader: Option<(Pubkey, u64, u32)> = None;
-    let mut tied = false;
+    let mut powers = Vec::with_capacity(ctx.remaining_accounts.len());
+    let mut candidates = Vec::with_capacity(ctx.remaining_accounts.len());
     for (i, info) in ctx.remaining_accounts.iter().enumerate() {
         require!(
             ctx.remaining_accounts[..i]
@@ -254,24 +255,16 @@ pub fn finalize_spv_election_handler<'info>(
             candidacy.listing_id == listing_id && candidacy.round == election.round,
             MarketplaceError::CandidacyMismatch
         );
-        total = total
-            .checked_add(candidacy.vote_power as u64)
-            .ok_or(MarketplaceError::Overflow)?;
-        match leader {
-            Some((_, _, best)) if candidacy.vote_power == best => tied = true,
-            Some((_, _, best)) if candidacy.vote_power > best => {
-                tied = false;
-                leader = Some((candidacy.lawyer, candidacy.costs, candidacy.vote_power));
-            }
-            None => leader = Some((candidacy.lawyer, candidacy.costs, candidacy.vote_power)),
-            _ => {}
-        }
+        powers.push(candidacy.vote_power as u64);
+        candidates.push((candidacy.lawyer, candidacy.costs, candidacy.vote_power));
     }
-    let quorum_met = total * 10_000
+    let tally = tally_plurality(powers).ok_or(MarketplaceError::Overflow)?;
+    let quorum_met = tally.total * 10_000
         > ctx.accounts.property.share_amount as u64 * listing.min_voting_quorum_bps as u64;
+    let tied = tally.tied;
 
     let mut assigned = false;
-    let (winner, winner_costs, top_power) = leader.unwrap_or_default();
+    let (winner, winner_costs, top_power) = tally.leader.map(|i| candidates[i]).unwrap_or_default();
     if quorum_met
         && listing.status == ListingStatus::SoldOut
         && !tied
@@ -401,6 +394,10 @@ pub struct UnlockVotingShares<'info> {
     #[account(mut, address = vote_record.rent_payer @ MarketplaceError::WrongRentPayer)]
     pub rent_payer: UncheckedAccount<'info>,
 
+    /// Typed, unlike `close_candidacy`'s tolerant listing: teardown requires
+    /// `holder_count == 0`, holdings only empty with `locked() == 0`, so
+    /// every lock is provably released while the listing still exists.
+    /// Relaxing that teardown guard would make this a permanent lock.
     #[account(
         seeds = [LISTING_SEED, &listing_id.to_le_bytes()],
         bump = listing.bump,

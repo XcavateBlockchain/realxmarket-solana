@@ -1,0 +1,12 @@
+[package]
+name = "xcavate-common"
+version = "0.1.0"
+description = "Shared vault transfer helpers and the payment-mint guard for the realXmarket programs"
+edition = "2021"
+
+[features]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }

@@ -892,7 +892,10 @@ pub fn finalize_challenge_handler(ctx: Context<FinalizeChallenge>, asset_id: u64
         // The slash comes out of the recorded location deposit, so a later
         // removal refunds exactly what is left.
         slashed = slash_cap.min(location.deposit);
-        location.deposit -= slashed;
+        location.deposit = location
+            .deposit
+            .checked_sub(slashed)
+            .ok_or(PropertyError::Overflow)?;
         if strikes >= 3 {
             location.assigned_count = location
                 .assigned_count

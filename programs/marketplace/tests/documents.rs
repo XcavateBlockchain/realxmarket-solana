@@ -332,6 +332,20 @@ fn cancelled_sale_refunds_and_pays_the_review() {
     assert_eq!(treasury_state.amount, fee_of(100) - COSTS);
     assert_eq!(listing_of(&svm, 0).spv_costs_due, 0);
 
+    // Re-cranking the drained pot is a harmless no-op, so a wind-down
+    // script can hit every mint blindly.
+    let lawyer_before = token_balance(&svm, &payment_ata(&spv_lawyer.pubkey(), &tgbp_mint()));
+    ok(
+        &mut svm,
+        settle_cancelled_fees_ix(&cranker.pubkey(), 0, &spv_lawyer.pubkey()),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(
+        token_balance(&svm, &payment_ata(&spv_lawyer.pubkey(), &tgbp_mint())),
+        lawyer_before
+    );
+
     // And with the pot empty, the teardown goes through.
     ok(
         &mut svm,

@@ -301,7 +301,11 @@ pub fn settle_cancelled_fees_handler(
         MarketplaceError::SharesOutstanding
     );
     let pot = ctx.accounts.listing_payment_account.amount;
-    require!(pot > 0, MarketplaceError::NothingToSettle);
+    // Idempotent: a mint that retained nothing, or was already drained,
+    // settles as a no-op so a wind-down script can crank every mint blindly.
+    if pot == 0 {
+        return Ok(());
+    }
 
     // The split is computed in the quote scale the costs were named in, so
     // the amount owed carries exactly across mints of different decimals.

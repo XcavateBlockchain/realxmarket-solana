@@ -297,6 +297,22 @@ impl Listing {
             .ok_or(MarketplaceError::Overflow)?;
         Ok(())
     }
+
+    /// The strict-below ownership cap, floored to whole shares: at 50% of
+    /// 100 shares nobody may reach 50, so the most is 49. `owned_after` is
+    /// whatever the call site says the wallet would control.
+    pub fn require_below_ownership_cap(&self, owned_after: u64, supply: u32) -> Result<()> {
+        use crate::error::MarketplaceError;
+        let max_shares = (self.max_ownership_bps as u64)
+            .checked_mul(supply as u64)
+            .ok_or(MarketplaceError::Overflow)?
+            / 10_000;
+        require!(
+            owned_after < max_shares,
+            MarketplaceError::MaxOwnershipExceeded
+        );
+        Ok(())
+    }
 }
 
 /// One payment mint's totals across the primary sale, in that mint's units.

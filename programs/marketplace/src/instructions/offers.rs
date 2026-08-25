@@ -474,27 +474,18 @@ pub fn accept_offer_handler<'info>(
         MarketplaceError::WrongVaultAccount
     );
 
-    // Everything here is unchecked so `try_accounts` fits the BPF stack, so
-    // both roles are derived and then deserialized: the address proves whose
-    // role it is, deserializing proves the assignment exists.
+    // Everything here is unchecked so `try_accounts` fits the BPF stack.
+    // `try_from` proves the roles program owns each record; the recorded
+    // user and role pin it without a key-dependent derivation.
     for (record, wallet) in [
         (&ctx.accounts.seller_role, ctx.accounts.seller.key()),
         (&ctx.accounts.offeror_role, ctx.accounts.offeror.key()),
     ] {
-        let (expected, _) = Pubkey::find_program_address(
-            &[
-                xcavate_whitelist::ROLE_SEED,
-                wallet.as_ref(),
-                &[Role::RealEstateInvestor.seed_byte()],
-            ],
-            &xcavate_whitelist::ID,
-        );
-        require_keys_eq!(
-            record.key(),
-            expected,
+        let role: Account<RoleAccount> = Account::try_from(record)?;
+        require!(
+            role.user == wallet && role.role == Role::RealEstateInvestor,
             MarketplaceError::WrongRegistryAccount
         );
-        Account::<RoleAccount>::try_from(record)?;
     }
     require_compliant(&ctx.accounts.seller_compliance, &ctx.accounts.seller.key())?;
     require_compliant(
@@ -518,14 +509,7 @@ pub fn accept_offer_handler<'info>(
     let owned_after = (ctx.accounts.offeror_holding.amount as u64)
         .checked_add(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
-    let max_shares = (primary.max_ownership_bps as u64)
-        .checked_mul(property.share_amount as u64)
-        .ok_or(MarketplaceError::Overflow)?
-        / 10_000;
-    require!(
-        owned_after < max_shares,
-        MarketplaceError::MaxOwnershipExceeded
-    );
+    primary.require_below_ownership_cap(owned_after, property.share_amount)?;
 
     // The fee comes out of the offered total, at the rate snapshotted on
     // the listing.

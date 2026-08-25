@@ -181,6 +181,9 @@ pub struct IncomeStream {
 /// accumulator would misprice payouts across them. The funds sit in the
 /// income vault's token accounts, apart from every other pot, so nothing
 /// else can spend money already owed to holders.
+///
+/// Deliberately has no close path: a finalized property lives forever, and
+/// the carried dust is still owed to future distributions.
 #[account]
 #[derive(InitSpace)]
 pub struct PropertyIncome {

@@ -36,9 +36,11 @@ fn instructions_fit_in_one_packet() {
     }
 }
 
-// The two settlement paths carry both sides' accounts and do not fit a legacy
-// transaction; the client must send them as v0 with an address lookup table.
-// Pinned so an added account can't quietly grow what the table has to absorb.
+// The two settlement paths carry both sides' accounts and are v0-only: the
+// client sends them with an address lookup table. buy_relisted_shares
+// happens to sit two bytes under the legacy limit today, but that headroom
+// is not contract; any added account spends it. Pinned so growth is a
+// deliberate decision about what the table has to absorb.
 #[test]
 fn settlement_paths_need_a_lookup_table() {
     let a = Pubkey::new_unique();
