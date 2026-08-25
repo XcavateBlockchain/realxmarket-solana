@@ -15,7 +15,7 @@ use crate::state::{
     PRICE_DECIMALS,
 };
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// Rescale a value quoted at `PRICE_DECIMALS` to the payment mint's own
 /// decimals, flooring so any dust favours the investor.
@@ -105,9 +105,16 @@ pub struct BuyPropertyShares<'info> {
         ],
         bump = investor_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = investor_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub investor_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, investor.key().as_ref()],
+        bump = investor_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = investor_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub investor_compliance: Box<Account<'info, Compliance>>,
 
     #[account(
         mut,

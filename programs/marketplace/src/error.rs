@@ -23,8 +23,9 @@ pub enum MarketplaceError {
     /// The lawyer still has active cases and can't unregister.
     #[msg("Lawyer still has active cases")]
     LawyerStillActive,
-    /// The role exists but its compliance flag is not set.
-    #[msg("Role is not compliant")]
+    /// The wallet has no live compliance record: never screened, blocked, or
+    /// its screening has lapsed.
+    #[msg("Wallet is not compliant")]
     NotCompliant,
     /// The share amount is zero or outside the configured bounds.
     #[msg("Invalid share amount")]
@@ -249,4 +250,7 @@ pub enum MarketplaceError {
     /// The asset name or metadata URI is empty or too long.
     #[msg("Invalid asset name or URI")]
     InvalidAssetMetadata,
+    /// A role or compliance account is not the one derived for that wallet.
+    #[msg("Wrong registry account")]
+    WrongRegistryAccount,
 }

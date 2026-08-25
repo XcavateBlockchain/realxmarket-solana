@@ -889,14 +889,9 @@ fn adjust_region_accounts(
 
 // --- extra role helpers ---
 
-/// Flips a role assignment's compliance flag through the whitelist program.
-pub fn set_permission(
-    svm: &mut LiteSVM,
-    authority: &Keypair,
-    user: &Pubkey,
-    role: Role,
-    compliant: bool,
-) {
+/// Block a wallet's compliance record through the whitelist program, to prove
+/// the regions gates don't consult it.
+pub fn block_compliance(svm: &mut LiteSVM, authority: &Keypair, user: &Pubkey) {
     let admin = funded(svm);
     ok(
         svm,
@@ -904,19 +899,24 @@ pub fn set_permission(
         authority,
         &[authority],
     );
-    let permission = if compliant {
-        xcavate_whitelist::state::AccessPermission::Compliant
-    } else {
-        xcavate_whitelist::state::AccessPermission::Revoked
-    };
+    let compliance = Pubkey::find_program_address(
+        &[xcavate_whitelist::COMPLIANCE_SEED, user.as_ref()],
+        &roles_id(),
+    )
+    .0;
     let ix = Instruction::new_with_bytes(
         roles_id(),
-        &xcavate_whitelist::instruction::SetPermission { role, permission }.data(),
-        xcavate_whitelist::accounts::SetPermission {
+        &xcavate_whitelist::instruction::SetCompliance {
+            status: xcavate_whitelist::state::ComplianceStatus::Blocked,
+            expires_at: 0,
+        }
+        .data(),
+        xcavate_whitelist::accounts::SetCompliance {
             admin_signer: admin.pubkey(),
             admin: admin_pda(&admin.pubkey()),
             user: *user,
-            role_account: role_pda(user, role),
+            compliance,
+            system_program: SYS,
         }
         .to_account_metas(None),
     );

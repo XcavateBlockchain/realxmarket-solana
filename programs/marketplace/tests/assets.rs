@@ -127,15 +127,9 @@ fn init_assets_rejects_after_expiry() {
 // The compliance gate spans both listing steps: a developer revoked between
 // step one and step two can't open the sale.
 #[test]
-fn init_assets_requires_compliant_developer() {
+fn init_assets_requires_a_compliant_developer() {
     let (mut svm, admin, _authority, developer) = setup_pending();
-    set_permission(
-        &mut svm,
-        &admin,
-        &developer.pubkey(),
-        Role::RealEstateDeveloper,
-        false,
-    );
+    set_compliance(&mut svm, &admin, &developer.pubkey(), false);
     fails_with(
         &mut svm,
         init_assets_ix(&developer.pubkey(), 0),

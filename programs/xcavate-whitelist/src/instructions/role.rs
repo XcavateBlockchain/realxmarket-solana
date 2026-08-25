@@ -2,9 +2,10 @@ use anchor_lang::prelude::*;
 
 use crate::constants::{ADMIN_SEED, ROLE_SEED};
 use crate::error::WhitelistError;
-use crate::state::{AccessPermission, Admin, Role, RoleAccount};
+use crate::state::{Admin, Role, RoleAccount};
 
-/// Grant a role to a user. The assignment starts compliant. Admin-only.
+/// Grant a role to a user. Admin-only. Says nothing about screening:
+/// that is `set_compliance`, and the money gates want both.
 #[derive(Accounts)]
 #[instruction(role: Role)]
 pub struct AssignRole<'info> {
@@ -37,7 +38,6 @@ pub fn assign_role_handler(ctx: Context<AssignRole>, role: Role) -> Result<()> {
     let role_account = &mut ctx.accounts.role_account;
     role_account.user = ctx.accounts.user.key();
     role_account.role = role;
-    role_account.permission = AccessPermission::Compliant;
     role_account.rent_payer = ctx.accounts.admin_signer.key();
     role_account.bump = ctx.bumps.role_account;
 
@@ -119,49 +119,6 @@ pub fn renounce_role_handler(ctx: Context<RenounceRole>, role: Role) -> Result<(
     Ok(())
 }
 
-/// Update a user's compliance status for a role. Admin-only.
-#[derive(Accounts)]
-#[instruction(role: Role)]
-pub struct SetPermission<'info> {
-    pub admin_signer: Signer<'info>,
-
-    #[account(
-        seeds = [ADMIN_SEED, admin_signer.key().as_ref()],
-        bump = admin.bump,
-    )]
-    pub admin: Account<'info, Admin>,
-
-    /// CHECK: the user whose permission changes; used as PDA seed only.
-    pub user: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        seeds = [ROLE_SEED, user.key().as_ref(), &[role.seed_byte()]],
-        bump = role_account.bump,
-    )]
-    pub role_account: Account<'info, RoleAccount>,
-}
-
-pub fn set_permission_handler(
-    ctx: Context<SetPermission>,
-    _role: Role,
-    permission: AccessPermission,
-) -> Result<()> {
-    let role_account = &mut ctx.accounts.role_account;
-    require!(
-        role_account.permission != permission,
-        WhitelistError::PermissionAlreadySet
-    );
-
-    role_account.permission = permission;
-    emit!(PermissionUpdated {
-        user: role_account.user,
-        role: role_account.role,
-        permission,
-    });
-    Ok(())
-}
-
 #[event]
 pub struct RoleAssigned {
     pub user: Pubkey,
@@ -172,11 +129,4 @@ pub struct RoleAssigned {
 pub struct RoleRemoved {
     pub user: Pubkey,
     pub role: Role,
-}
-
-#[event]
-pub struct PermissionUpdated {
-    pub user: Pubkey,
-    pub role: Role,
-    pub permission: AccessPermission,
 }

@@ -5,9 +5,9 @@ pub enum WhitelistError {
     /// The signer is not the configured sudo authority.
     #[msg("Signer is not the sudo authority")]
     NotAuthority,
-    /// The permission is already set to the requested value.
-    #[msg("Permission is already set to this value")]
-    PermissionAlreadySet,
+    /// The expiry is negative, or in the past for a record meant to clear.
+    #[msg("Invalid compliance expiry")]
+    InvalidExpiry,
     /// The new authority cannot be the zero address.
     #[msg("Invalid authority address")]
     InvalidAuthority,

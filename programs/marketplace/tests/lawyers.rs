@@ -94,10 +94,10 @@ fn register_twice_fails() {
 // Registering checks role possession only. The compliance flag gates the
 // marketplace's investor-fund flows, not registry membership.
 #[test]
-fn register_ignores_compliance_flag() {
+fn register_ignores_compliance() {
     let (mut svm, admin, _authority) = setup_with_region();
     let lawyer = new_lawyer(&mut svm, &admin);
-    set_permission(&mut svm, &admin, &lawyer.pubkey(), Role::Lawyer, false);
+    set_compliance(&mut svm, &admin, &lawyer.pubkey(), false);
 
     ok(
         &mut svm,

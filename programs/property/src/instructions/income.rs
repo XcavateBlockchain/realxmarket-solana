@@ -89,14 +89,17 @@ pub struct DistributeIncome<'info> {
     )]
     pub property: Box<Account<'info, PropertyAsset>>,
 
-    /// The marketplace config; income arrives in its accepted payment mints,
-    /// which its mint guard already vetted.
+    /// CHECK: the marketplace config, seeds-pinned here and deserialized in
+    /// the handler. Typed here it would collide with this program's own
+    /// `Config` in the IDL, since both resolve to the same account name.
+    /// Income arrives in its accepted payment mints, which its mint guard
+    /// already vetted.
     #[account(
         seeds = [marketplace::CONFIG_SEED],
-        bump = market_config.bump,
+        bump,
         seeds::program = marketplace::ID,
     )]
-    pub market_config: Box<Account<'info, MarketConfig>>,
+    pub market_config: UncheckedAccount<'info>,
 
     /// The property's income ledger; the first distribution creates it.
     #[account(
@@ -133,8 +136,8 @@ pub struct DistributeIncome<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn distribute_income_handler(
-    ctx: Context<DistributeIncome>,
+pub fn distribute_income_handler<'info>(
+    ctx: Context<'info, DistributeIncome<'info>>,
     asset_id: u64,
     amount: u64,
 ) -> Result<()> {
@@ -148,11 +151,9 @@ pub fn distribute_income_handler(
         PropertyError::NotAssignedAgent
     );
     let mint_key = ctx.accounts.payment_mint.key();
+    let market_config: Account<MarketConfig> = Account::try_from(&ctx.accounts.market_config)?;
     require!(
-        ctx.accounts
-            .market_config
-            .accepted_payment_mints
-            .contains(&mint_key),
+        market_config.accepted_payment_mints.contains(&mint_key),
         PropertyError::PaymentMintNotAccepted
     );
 

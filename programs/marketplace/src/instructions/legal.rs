@@ -1,13 +1,15 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{LAWYER_CANDIDATE_SEED, LAWYER_SEED, LISTING_SEED, PROPERTY_SEED};
+use crate::constants::{
+    CONFIG_SEED, LAWYER_CANDIDATE_SEED, LAWYER_SEED, LISTING_SEED, PROPERTY_SEED,
+};
 use crate::error::MarketplaceError;
 use crate::state::{
-    DocumentStatus, Lawyer, LawyerCandidacy, Listing, ListingStatus, PropertyAsset,
+    Config, DocumentStatus, Lawyer, LawyerCandidacy, Listing, ListingStatus, PropertyAsset,
     MAX_SPV_CANDIDATES,
 };
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// The gates every lawyer engagement shares: the sale is sold out, the legal
 /// process still has time, and the lawyer serves the property's region.
@@ -54,8 +56,8 @@ pub struct AssignDeveloperLawyer<'info> {
     )]
     pub developer_role: Box<Account<'info, RoleAccount>>,
 
-    /// The named lawyer's role; they carry the legal responsibility, so the
-    /// compliance flag is checked even though they aren't the signer.
+    /// The named lawyer's role. They carry the legal responsibility, so their
+    /// KYC is checked too even though they aren't the signer.
     #[account(
         seeds = [
             xcavate_whitelist::ROLE_SEED,
@@ -64,9 +66,19 @@ pub struct AssignDeveloperLawyer<'info> {
         ],
         bump = lawyer_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = lawyer_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub lawyer_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, lawyer.as_ref()],
+        bump = lawyer_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = lawyer_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub lawyer_compliance: Box<Account<'info, Compliance>>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
 
     /// The named lawyer's registry entry; takes the case.
     #[account(
@@ -147,9 +159,19 @@ pub struct ClaimSpvCase<'info> {
         ],
         bump = lawyer_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = lawyer_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub lawyer_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, lawyer.key().as_ref()],
+        bump = lawyer_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = lawyer_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub lawyer_compliance: Box<Account<'info, Compliance>>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
 
     /// The caller's registry entry; proves registration and carries the region.
     #[account(

@@ -13,10 +13,11 @@ declare_id!("7TrzjKpdrEhnfhxuw8tWdH1sjxadazscsG5HXCDPLmaY");
 
 /// Roles and compliance registry for the realXmarket protocol.
 ///
-/// Tracks which addresses hold which roles and whether each assignment is
-/// KYC-compliant. Other programs gate actions by loading the `RoleAccount`
-/// PDA (`["role", user, role.seed_byte()]`), which requires the role to be
-/// assigned.
+/// Two separate registries. Roles say what an address may do, and are read as
+/// the `RoleAccount` PDA (`["role", user, role.seed_byte()]`), whose existence
+/// is the grant. Compliance says whether an address is cleared to move money,
+/// and is read as the `Compliance` PDA (`["compliance", user]`), which carries
+/// a screening verdict and an expiry.
 #[program]
 pub mod xcavate_whitelist {
     use super::*;
@@ -46,7 +47,7 @@ pub mod xcavate_whitelist {
         admin::remove_admin_handler(ctx, admin_key)
     }
 
-    /// Assign a role to a user (default Compliant). Admin-only.
+    /// Assign a role to a user. Admin-only.
     pub fn assign_role(ctx: Context<AssignRole>, role: Role) -> Result<()> {
         role::assign_role_handler(ctx, role)
     }
@@ -61,12 +62,18 @@ pub mod xcavate_whitelist {
         role::renounce_role_handler(ctx, role)
     }
 
-    /// Update a user's compliance status for a role. Admin-only.
-    pub fn set_permission(
-        ctx: Context<SetPermission>,
-        role: Role,
-        permission: AccessPermission,
+    /// Record a wallet's screening outcome, creating the record on first use.
+    /// Admin-only.
+    pub fn set_compliance(
+        ctx: Context<SetCompliance>,
+        status: ComplianceStatus,
+        expires_at: i64,
     ) -> Result<()> {
-        role::set_permission_handler(ctx, role, permission)
+        compliance::set_compliance_handler(ctx, status, expires_at)
+    }
+
+    /// Delete a wallet's compliance record. Admin-only.
+    pub fn remove_compliance(ctx: Context<RemoveCompliance>) -> Result<()> {
+        compliance::remove_compliance_handler(ctx)
     }
 }

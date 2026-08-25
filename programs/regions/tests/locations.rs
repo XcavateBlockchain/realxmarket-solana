@@ -91,20 +91,14 @@ fn create_location_rejects_bad_postcodes() {
     }
 }
 
-// Regions checks role possession only. The compliance
-// flag gates the marketplace's investor-fund flows, not region administration,
-// so an operator whose flag is revoked keeps running their region.
+// Regions checks role possession only. Compliance gates the marketplace's
+// investor-fund flows, not region administration, so a blocked operator keeps
+// running their region.
 #[test]
-fn create_location_ignores_compliance_flag() {
+fn create_location_ignores_compliance() {
     let (mut svm, operator, authority) = setup();
     created_region(&mut svm, &operator, &authority);
-    set_permission(
-        &mut svm,
-        &authority,
-        &operator.pubkey(),
-        Role::RegionalOperator,
-        false,
-    );
+    block_compliance(&mut svm, &authority, &operator.pubkey());
     ok(
         &mut svm,
         create_location_ix(&operator.pubkey(), 1, b"SW1A1AA"),

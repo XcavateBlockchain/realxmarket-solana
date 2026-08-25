@@ -96,15 +96,9 @@ fn list_requires_developer_role() {
 // list_property starts the flow that takes investor funds, so it is one of the
 // calls gated on the compliance flag, not just role possession.
 #[test]
-fn list_requires_compliant_developer() {
+fn list_requires_a_compliant_developer() {
     let (mut svm, admin, _authority, developer) = setup_listing();
-    set_permission(
-        &mut svm,
-        &admin,
-        &developer.pubkey(),
-        Role::RealEstateDeveloper,
-        false,
-    );
+    set_compliance(&mut svm, &admin, &developer.pubkey(), false);
     fails_with(
         &mut svm,
         list_ix(&developer.pubkey(), 0),
@@ -114,13 +108,7 @@ fn list_requires_compliant_developer() {
     );
 
     // Restored compliance lists fine again.
-    set_permission(
-        &mut svm,
-        &admin,
-        &developer.pubkey(),
-        Role::RealEstateDeveloper,
-        true,
-    );
+    set_compliance(&mut svm, &admin, &developer.pubkey(), true);
     ok(
         &mut svm,
         list_ix(&developer.pubkey(), 0),
@@ -293,13 +281,7 @@ fn upgrade_object_requires_compliance() {
         &developer,
         &[&developer],
     );
-    set_permission(
-        &mut svm,
-        &admin,
-        &developer.pubkey(),
-        Role::RealEstateDeveloper,
-        false,
-    );
+    set_compliance(&mut svm, &admin, &developer.pubkey(), false);
     fails_with(
         &mut svm,
         upgrade_ix(&developer.pubkey(), 0, 2 * SHARE_PRICE),

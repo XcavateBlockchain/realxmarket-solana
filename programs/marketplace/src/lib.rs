@@ -4,6 +4,7 @@
 //! everyone atomically. Deposits (listing, lawyer) are staked in XCAV; sales
 //! are paid in the accepted payment mints.
 
+pub mod compliance_guard;
 pub mod constants;
 pub mod error;
 pub mod instructions;

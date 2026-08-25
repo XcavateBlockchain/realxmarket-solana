@@ -23,7 +23,8 @@ use crate::state::{
     MIN_PAYMENT_DECIMALS, PRICE_DECIMALS,
 };
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use crate::compliance_guard::require_compliant;
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// Anchor discriminator of the property program's `settle_income`. Built by
 /// hand because the crate dependency runs the other way (property depends
@@ -176,9 +177,16 @@ pub struct RelistShares<'info> {
         ],
         bump = seller_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = seller_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub seller_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, seller.key().as_ref()],
+        bump = seller_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = seller_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub seller_compliance: Box<Account<'info, Compliance>>,
 
     /// The primary listing; carries the property's lifecycle status.
     #[account(
@@ -335,9 +343,12 @@ pub struct BuyRelistedShares<'info> {
         ],
         bump = buyer_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = buyer_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub buyer_role: Box<Account<'info, RoleAccount>>,
+
+    /// CHECK: the buyer's compliance record; address derived and verdict read
+    /// in the handler, to keep `try_accounts` inside the BPF stack frame.
+    pub buyer_compliance: UncheckedAccount<'info>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
@@ -473,6 +484,7 @@ pub fn buy_relisted_shares_handler<'info>(
     amount: u32,
     max_total_cost: u64,
 ) -> Result<()> {
+    require_compliant(&ctx.accounts.buyer_compliance, &ctx.accounts.buyer.key())?;
     let primary: Account<Listing> = Account::try_from(&ctx.accounts.listing)?;
     require!(
         primary.status == ListingStatus::Finalized,
@@ -733,9 +745,16 @@ pub struct SendShares<'info> {
         ],
         bump = sender_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = sender_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub sender_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, sender.key().as_ref()],
+        bump = sender_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = sender_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub sender_compliance: Box<Account<'info, Compliance>>,
 
     /// CHECK: the receiving wallet; its role account below proves standing.
     pub receiver: UncheckedAccount<'info>,
@@ -750,9 +769,19 @@ pub struct SendShares<'info> {
         ],
         bump = receiver_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = receiver_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub receiver_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, receiver.key().as_ref()],
+        bump = receiver_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = receiver_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub receiver_compliance: Box<Account<'info, Compliance>>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the primary listing (status gate and the ownership-cap
     /// snapshot), seeds-pinned here and deserialized in the handler.

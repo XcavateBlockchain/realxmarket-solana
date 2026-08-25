@@ -129,6 +129,34 @@ fn make_offer_validates_the_bid() {
 
 // --- accepting ---
 
+// Accepting settles both sides in one instruction and checks four registry
+// accounts, so it is the heaviest path in the program. Pinned against the
+// default budget: LiteSVM would happily run an instruction no cluster fits,
+// and a client that has to raise the limit should find out here, not in
+// production.
+const COMPUTE_BUDGET: u64 = 200_000;
+
+#[test]
+fn accept_stays_within_the_compute_budget() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let used = process(
+        &mut svm,
+        accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),
+        seller,
+        &[seller],
+    )
+    .unwrap()
+    .compute_units_consumed;
+    assert!(
+        used <= COMPUTE_BUDGET,
+        "accept_offer used {used} CU, over the {COMPUTE_BUDGET} default"
+    );
+}
+
 #[test]
 fn accept_pays_from_the_vault_and_moves_shares() {
     let (mut svm, admin, investors) = listed_property();
@@ -309,13 +337,7 @@ fn accept_requires_a_still_compliant_bidder() {
     bid(&mut svm, &offeror, 10, BID);
 
     // KYC revoked between make and accept: shares must not be delivered.
-    set_permission(
-        &mut svm,
-        &admin,
-        &offeror.pubkey(),
-        Role::RealEstateInvestor,
-        false,
-    );
+    set_compliance(&mut svm, &admin, &offeror.pubkey(), false);
     fails_with(
         &mut svm,
         accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint()),

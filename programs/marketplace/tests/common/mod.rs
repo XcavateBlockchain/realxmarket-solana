@@ -17,7 +17,7 @@ pub use marketplace::state::Config as MarketplaceConfig;
 pub use marketplace::state::ListingStatus;
 pub use solana_keypair::Keypair;
 pub use solana_signer::Signer;
-pub use xcavate_whitelist::state::Role;
+pub use xcavate_whitelist::state::{ComplianceStatus, Role};
 
 use anchor_lang::solana_program::instruction::Instruction;
 use anchor_lang::solana_program::program_option::COption;
@@ -182,6 +182,53 @@ pub fn role_pda(user: &Pubkey, role: Role) -> Pubkey {
         &roles_id(),
     )
     .0
+}
+
+/// The wallet's compliance record, in the roles program.
+pub fn compliance_pda(user: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[xcavate_whitelist::COMPLIANCE_SEED, user.as_ref()],
+        &roles_id(),
+    )
+    .0
+}
+
+fn set_compliance_ix(
+    admin: &Pubkey,
+    user: &Pubkey,
+    status: ComplianceStatus,
+    expires_at: i64,
+) -> Instruction {
+    Instruction::new_with_bytes(
+        roles_id(),
+        &xcavate_whitelist::instruction::SetCompliance { status, expires_at }.data(),
+        xcavate_whitelist::accounts::SetCompliance {
+            admin_signer: *admin,
+            admin: admin_pda(admin),
+            user: *user,
+            compliance: compliance_pda(user),
+            system_program: SYS,
+        }
+        .to_account_metas(None),
+    )
+}
+
+/// Clear a wallet, or block it. Goes through the program rather than seeding
+/// the account, so the tests exercise the real screening path.
+pub fn set_compliance(svm: &mut LiteSVM, admin: &Keypair, user: &Pubkey, cleared: bool) {
+    let status = if cleared {
+        ComplianceStatus::Cleared
+    } else {
+        ComplianceStatus::Blocked
+    };
+    let ix = set_compliance_ix(&admin.pubkey(), user, status, 0);
+    ok(svm, ix, admin, &[admin]);
+}
+
+/// Clear a wallet until `expires_at`, for the lapse cases.
+pub fn clear_compliance_until(svm: &mut LiteSVM, admin: &Keypair, user: &Pubkey, expires_at: i64) {
+    let ix = set_compliance_ix(&admin.pubkey(), user, ComplianceStatus::Cleared, expires_at);
+    ok(svm, ix, admin, &[admin]);
 }
 
 // --- XCAV mint / token accounts (seeded directly) ---
@@ -678,6 +725,7 @@ pub fn new_developer(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
         admin,
         &[admin],
     );
+    set_compliance(svm, admin, &kp.pubkey(), true);
     kp
 }
 
@@ -725,6 +773,7 @@ pub fn list_property_ix_capped(
             developer: *developer,
             config: marketplace_config(),
             developer_role: role_pda(developer, Role::RealEstateDeveloper),
+            developer_compliance: compliance_pda(developer),
             region: region_pda(region_id),
             location: location_pda(region_id, postcode),
             property: property_pda(listing_id),
@@ -773,8 +822,10 @@ pub fn upgrade_ix(developer: &Pubkey, listing_id: u64, new_price: u64) -> Instru
         }
         .data(),
         marketplace::accounts::UpgradeObject {
+            config: marketplace_config(),
             developer: *developer,
             developer_role: role_pda(developer, Role::RealEstateDeveloper),
+            developer_compliance: compliance_pda(developer),
             listing: listing_pda(listing_id),
         }
         .to_account_metas(None),
@@ -805,8 +856,10 @@ pub fn init_assets_ix_full(
         }
         .data(),
         marketplace::accounts::InitPropertyAssets {
+            config: marketplace_config(),
             developer: *developer,
             developer_role: role_pda(developer, Role::RealEstateDeveloper),
+            developer_compliance: compliance_pda(developer),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
             share_mint: share_mint_pda(listing_id),
@@ -831,6 +884,7 @@ pub fn new_investor(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
         admin,
         &[admin],
     );
+    set_compliance(svm, admin, &kp.pubkey(), true);
     kp
 }
 
@@ -877,6 +931,7 @@ pub fn buy_ix_with_mint(
             payer: *payer,
             config: marketplace_config(),
             investor_role: role_pda(investor, Role::RealEstateInvestor),
+            investor_compliance: compliance_pda(investor),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
             position: position_pda(listing_id, investor),
@@ -940,6 +995,7 @@ pub fn reserve_ix_with_mint(
             payer: *payer,
             config: marketplace_config(),
             investor_role: role_pda(investor, Role::RealEstateInvestor),
+            investor_compliance: compliance_pda(investor),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
             position: position_pda(listing_id, investor),
@@ -979,6 +1035,7 @@ pub fn claim_ix_with_mint(
             payer: *payer,
             config: marketplace_config(),
             investor_role: role_pda(investor, Role::RealEstateInvestor),
+            investor_compliance: compliance_pda(investor),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
             position: position_pda(listing_id, investor),
@@ -1164,6 +1221,7 @@ pub fn new_confirmer(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
         admin,
         &[admin],
     );
+    set_compliance(svm, admin, &kp.pubkey(), true);
     kp
 }
 
@@ -1625,6 +1683,7 @@ pub fn new_lawyer(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
         admin,
         &[admin],
     );
+    set_compliance(svm, admin, &kp.pubkey(), true);
     kp
 }
 
@@ -1691,9 +1750,11 @@ pub fn assign_dev_lawyer_ix(developer: &Pubkey, listing_id: u64, lawyer: &Pubkey
         }
         .data(),
         marketplace::accounts::AssignDeveloperLawyer {
+            config: marketplace_config(),
             developer: *developer,
             developer_role: role_pda(developer, Role::RealEstateDeveloper),
             lawyer_role: role_pda(lawyer, Role::Lawyer),
+            lawyer_compliance: compliance_pda(lawyer),
             registry: lawyer_pda(lawyer),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
@@ -1712,9 +1773,11 @@ pub fn claim_spv_ix(lawyer: &Pubkey, listing_id: u64, round: u64, costs: u64) ->
         }
         .data(),
         marketplace::accounts::ClaimSpvCase {
+            config: marketplace_config(),
             lawyer: *lawyer,
             payer: sponsor().pubkey(),
             lawyer_role: role_pda(lawyer, Role::Lawyer),
+            lawyer_compliance: compliance_pda(lawyer),
             registry: lawyer_pda(lawyer),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
@@ -1830,33 +1893,6 @@ pub fn resign_case_ix(lawyer: &Pubkey, listing_id: u64) -> Instruction {
         }
         .to_account_metas(None),
     )
-}
-
-/// Flips a role assignment's compliance flag through the whitelist program.
-pub fn set_permission(
-    svm: &mut LiteSVM,
-    admin: &Keypair,
-    user: &Pubkey,
-    role: Role,
-    compliant: bool,
-) {
-    let permission = if compliant {
-        xcavate_whitelist::state::AccessPermission::Compliant
-    } else {
-        xcavate_whitelist::state::AccessPermission::Revoked
-    };
-    let ix = Instruction::new_with_bytes(
-        roles_id(),
-        &xcavate_whitelist::instruction::SetPermission { role, permission }.data(),
-        xcavate_whitelist::accounts::SetPermission {
-            admin_signer: admin.pubkey(),
-            admin: admin_pda(&admin.pubkey()),
-            user: *user,
-            role_account: role_pda(user, role),
-        }
-        .to_account_metas(None),
-    );
-    ok(svm, ix, admin, &[admin]);
 }
 
 // --- setup ---
@@ -1983,6 +2019,7 @@ pub fn relist_ix(seller: &Pubkey, asset_id: u64, id: u64, amount: u32, price: u6
             payer: *seller,
             config: marketplace_config(),
             seller_role: role_pda(seller, Role::RealEstateInvestor),
+            seller_compliance: compliance_pda(seller),
             listing: listing_pda(asset_id),
             holding: holding_pda(asset_id, seller),
             share_listing: share_listing_pda(id),
@@ -2050,6 +2087,7 @@ pub fn buy_relisted_ix_with_mint(
             buyer: *buyer,
             payer: *buyer,
             buyer_role: role_pda(buyer, Role::RealEstateInvestor),
+            buyer_compliance: compliance_pda(buyer),
             config: marketplace_config(),
             listing: listing_pda(asset_id),
             property: property_pda(asset_id),
@@ -2314,6 +2352,7 @@ pub fn make_offer_ix(
             offeror: *offeror,
             payer: *offeror,
             offeror_role: role_pda(offeror, Role::RealEstateInvestor),
+            offeror_compliance: compliance_pda(offeror),
             config: marketplace_config(),
             share_listing: share_listing_pda(id),
             offer: offer_pda(id, offeror),
@@ -2344,6 +2383,7 @@ pub fn accept_offer_ix(
             seller: *seller,
             payer: *seller,
             seller_role: role_pda(seller, Role::RealEstateInvestor),
+            seller_compliance: compliance_pda(seller),
             config: marketplace_config(),
             listing: listing_pda(asset_id),
             property: property_pda(asset_id),
@@ -2351,6 +2391,7 @@ pub fn accept_offer_ix(
             listing_rent_payer: *seller,
             offeror: *offeror,
             offeror_role: role_pda(offeror, Role::RealEstateInvestor),
+            offeror_compliance: compliance_pda(offeror),
             offer: offer_pda(id, offeror),
             offer_rent_payer: *offeror,
             seller_holding: holding_pda(asset_id, seller),
@@ -2439,11 +2480,14 @@ pub fn send_shares_ix(
         mid(),
         &marketplace::instruction::SendPropertyShares { asset_id, amount }.data(),
         marketplace::accounts::SendShares {
+            config: marketplace_config(),
             sender: *sender,
             payer: *sender,
             sender_role: role_pda(sender, Role::RealEstateInvestor),
+            sender_compliance: compliance_pda(sender),
             receiver: *receiver,
             receiver_role: role_pda(receiver, Role::RealEstateInvestor),
+            receiver_compliance: compliance_pda(receiver),
             listing: listing_pda(asset_id),
             property: property_pda(asset_id),
             sender_holding: holding_pda(asset_id, sender),

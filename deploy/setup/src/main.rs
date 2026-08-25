@@ -1,8 +1,8 @@
 //! Bootstraps a freshly deployed realXmarket cluster: initializes the four
-//! program configs, hands out the team roles, walks one region through the
-//! proposal vote so a property can actually list, and registers the test
-//! lawyers. Safe to re-run: every phase checks on-chain state first and
-//! skips what already exists.
+//! program configs, hands out the team roles, screens each actor for
+//! compliance, walks one region through the proposal vote so a property can
+//! actually list, and registers the test lawyers. Safe to re-run: every phase
+//! checks on-chain state first and skips what already exists.
 //!
 //! Run through `deploy/deploy.sh`, which creates the keys and mints this
 //! tool expects under `deploy/keys/`.
@@ -23,13 +23,17 @@ use solana_signer::Signer;
 use solana_transaction::versioned::VersionedTransaction;
 
 use regions::state::Vote;
-use xcavate_whitelist::state::Role;
+use xcavate_whitelist::state::{ComplianceStatus, Role};
 
 const SYS: Pubkey = anchor_lang::system_program::ID;
 const TOKEN: Pubkey = anchor_spl::token::ID;
 const ATA_PROGRAM: Pubkey = anchor_spl::associated_token::ID;
 
 const XCAV: u64 = 1_000_000_000; // 9 decimals
+
+/// How long a screening clears a wallet for. Sanctions lists change, so the
+/// record is dated and re-running the bootstrap renews it.
+const COMPLIANCE_PERIOD: i64 = 90 * 86_400;
 
 const REGION_ID: u16 = 1;
 const POSTCODES: [&[u8]; 2] = [b"SW1A1AA", b"M11AE"];
@@ -118,6 +122,21 @@ fn admin_pda(who: &Pubkey) -> Pubkey {
     )
     .0
 }
+fn compliance_pda(user: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[xcavate_whitelist::COMPLIANCE_SEED, user.as_ref()],
+        &xcavate_whitelist::ID,
+    )
+    .0
+}
+
+fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs() as i64
+}
+
 fn role_pda(user: &Pubkey, role: Role) -> Pubkey {
     Pubkey::find_program_address(
         &[
@@ -303,8 +322,6 @@ fn main() {
         );
     }
 
-    // Roles default to Compliant on assignment, which is what a KYC'd test
-    // actor needs anyway.
     let assignments = [
         ("operator", operator.pubkey(), Role::RegionalOperator),
         ("developer", developer.pubkey(), Role::RealEstateDeveloper),
@@ -334,6 +351,40 @@ fn main() {
                     admin: admin_pda(&admin.pubkey()),
                     user,
                     role_account: role_pda(&user, role),
+                    system_program: SYS,
+                }
+                .to_account_metas(None),
+            ),
+            &admin,
+            &[&admin],
+        );
+    }
+
+    // --- compliance ---
+    //
+    // Roles say what an actor may do, the compliance record says they are
+    // cleared to move money. Every test actor gets one so a gate is never the
+    // surprise, dated so devnet exercises the same re-screening the real
+    // process needs.
+    // Unlike the phases above this one always sends: `set_compliance` is an
+    // upsert, so a re-run is how a lapsed record gets renewed.
+    println!("compliance");
+    let expires_at = now_unix() + COMPLIANCE_PERIOD;
+    for (name, user, _) in assignments {
+        ctx.send(
+            &format!("clear {name}"),
+            Instruction::new_with_bytes(
+                xcavate_whitelist::ID,
+                &xcavate_whitelist::instruction::SetCompliance {
+                    status: ComplianceStatus::Cleared,
+                    expires_at,
+                }
+                .data(),
+                xcavate_whitelist::accounts::SetCompliance {
+                    admin_signer: admin.pubkey(),
+                    admin: admin_pda(&admin.pubkey()),
+                    user,
+                    compliance: compliance_pda(&user),
                     system_program: SYS,
                 }
                 .to_account_metas(None),

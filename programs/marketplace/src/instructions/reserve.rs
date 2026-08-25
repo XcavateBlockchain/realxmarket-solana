@@ -16,7 +16,7 @@ use crate::state::{
     LOCK_REASONS,
 };
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// Reserve shares of a listed property. No money moves and no shares are
 /// delivered: the cost is recorded against the investor's own payment
@@ -46,9 +46,16 @@ pub struct ReserveShares<'info> {
         ],
         bump = investor_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = investor_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub investor_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, investor.key().as_ref()],
+        bump = investor_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = investor_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub investor_compliance: Box<Account<'info, Compliance>>,
 
     #[account(
         mut,
@@ -265,9 +272,16 @@ pub struct ClaimShares<'info> {
         ],
         bump = investor_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = investor_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub investor_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, investor.key().as_ref()],
+        bump = investor_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = investor_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub investor_compliance: Box<Account<'info, Compliance>>,
 
     #[account(
         mut,

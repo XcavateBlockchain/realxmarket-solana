@@ -86,8 +86,8 @@ pub mod property {
         election::unlock_agent_votes_handler(ctx, asset_id, round)
     }
 
-    pub fn distribute_income(
-        ctx: Context<DistributeIncome>,
+    pub fn distribute_income<'info>(
+        ctx: Context<'info, DistributeIncome<'info>>,
         asset_id: u64,
         amount: u64,
     ) -> Result<()> {

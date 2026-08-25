@@ -26,7 +26,8 @@ use crate::state::{
     MIN_PAYMENT_DECIMALS, PRICE_DECIMALS,
 };
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use crate::compliance_guard::require_compliant;
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// Empty the offer's vault, then close its token account back to whoever
 /// fronted the offer's rent. Pays the fixed amounts first and sweeps
@@ -116,9 +117,16 @@ pub struct MakeOffer<'info> {
         ],
         bump = offeror_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = offeror_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub offeror_role: Box<Account<'info, RoleAccount>>,
+
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, offeror.key().as_ref()],
+        bump = offeror_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = offeror_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub offeror_compliance: Box<Account<'info, Compliance>>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
@@ -270,18 +278,16 @@ pub struct AcceptOffer<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    /// CHECK: the seller's investor role, seeds-pinned to the roles
-    /// program; deserialized in the handler for the compliance flag.
-    #[account(
-        seeds = [
-            xcavate_whitelist::ROLE_SEED,
-            seller.key().as_ref(),
-            &[Role::RealEstateInvestor.seed_byte()],
-        ],
-        bump,
-        seeds::program = xcavate_whitelist::ID,
-    )]
+    /// CHECK: the seller's investor role; address derived and existence
+    /// proved in the handler, like the bidder's.
     pub seller_role: UncheckedAccount<'info>,
+
+    /// CHECK: both compliance records; addresses derived and verdicts read in
+    /// the handler, to keep `try_accounts` inside the BPF stack frame.
+    pub seller_compliance: UncheckedAccount<'info>,
+
+    /// CHECK: see `seller_compliance`.
+    pub offeror_compliance: UncheckedAccount<'info>,
 
     /// CHECK: the config, seeds-pinned here and deserialized in the handler
     /// to keep its bulk off the `try_accounts` stack; only the treasury key
@@ -468,23 +474,33 @@ pub fn accept_offer_handler<'info>(
         MarketplaceError::WrongVaultAccount
     );
 
-    let seller_role: Account<RoleAccount> = Account::try_from(&ctx.accounts.seller_role)?;
-    require!(seller_role.is_compliant(), MarketplaceError::NotCompliant);
-    let expected_role = Pubkey::find_program_address(
-        &[
-            xcavate_whitelist::ROLE_SEED,
-            ctx.accounts.offeror.key().as_ref(),
-            &[Role::RealEstateInvestor.seed_byte()],
-        ],
-        &xcavate_whitelist::ID,
-    )
-    .0;
-    require!(
-        ctx.accounts.offeror_role.key() == expected_role,
-        MarketplaceError::NotCompliant
-    );
-    let offeror_role: Account<RoleAccount> = Account::try_from(&ctx.accounts.offeror_role)?;
-    require!(offeror_role.is_compliant(), MarketplaceError::NotCompliant);
+    // Everything here is unchecked so `try_accounts` fits the BPF stack, so
+    // both roles are derived and then deserialized: the address proves whose
+    // role it is, deserializing proves the assignment exists.
+    for (record, wallet) in [
+        (&ctx.accounts.seller_role, ctx.accounts.seller.key()),
+        (&ctx.accounts.offeror_role, ctx.accounts.offeror.key()),
+    ] {
+        let (expected, _) = Pubkey::find_program_address(
+            &[
+                xcavate_whitelist::ROLE_SEED,
+                wallet.as_ref(),
+                &[Role::RealEstateInvestor.seed_byte()],
+            ],
+            &xcavate_whitelist::ID,
+        );
+        require_keys_eq!(
+            record.key(),
+            expected,
+            MarketplaceError::WrongRegistryAccount
+        );
+        Account::<RoleAccount>::try_from(record)?;
+    }
+    require_compliant(&ctx.accounts.seller_compliance, &ctx.accounts.seller.key())?;
+    require_compliant(
+        &ctx.accounts.offeror_compliance,
+        &ctx.accounts.offeror.key(),
+    )?;
     let config: Account<Config> = Account::try_from(&ctx.accounts.config)?;
     require!(
         ctx.accounts.treasury.key() == config.treasury,

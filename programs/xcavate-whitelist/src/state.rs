@@ -2,9 +2,9 @@ use anchor_lang::prelude::*;
 
 /// All roles recognised across the realXmarket protocol.
 ///
-/// A role is app-level authorization, separate from KYC/compliance. Compliance
-/// lives in [`AccessPermission`], and will eventually be driven by SAS
-/// attestations rather than a manually set flag.
+/// A role is app-level authorization, separate from KYC. Screening lives in
+/// the per-wallet `Compliance` account, which the consuming programs check
+/// alongside the role, so a role account tracks assignment only.
 ///
 /// Do not reorder the variants: the serialized `RoleAccount.role` stores the
 /// variant index, so a reorder reinterprets every existing assignment.
@@ -40,20 +40,43 @@ impl Role {
     }
 }
 
-/// Compliance status for a (user, role) assignment, set by an admin after
-/// off-chain KYC/AML. Only the marketplace's investor-fund calls (listing,
-/// buying, offers, share transfers, lawyer case work) require this flag on
-/// top of the role; every other instruction checks role possession alone.
-/// Later it'll be driven by a SAS attestation instead of a manual toggle.
+/// Screening outcome for a wallet. `Blocked` is a positive statement, not the
+/// absence of a record: deleting the account only takes a wallet back to
+/// never-screened, so a sanctions hit has to stay on file.
 ///
-/// Do not reorder the variants: the serialized `RoleAccount.permission`
-/// stores the variant index, so a reorder flips every stored status.
+/// Do not reorder the variants: the serialized `Compliance.status` stores the
+/// variant index.
 #[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum AccessPermission {
-    /// Passed KYC/AML, so role-specific actions are allowed.
-    Compliant,
-    /// Revoked, so role-specific actions are blocked.
-    Revoked,
+pub enum ComplianceStatus {
+    /// Passed KYC/AML, so gated actions are allowed until `expires_at`.
+    Cleared,
+    /// Failed screening or later sanctioned. Never allowed.
+    Blocked,
+}
+
+/// One wallet's compliance standing, set by an admin after off-chain KYC/AML.
+/// Held per wallet rather than per role: screening is a property of the person,
+/// and a holder of two roles must not be able to carry two disagreeing
+/// verdicts.
+#[account]
+#[derive(InitSpace)]
+pub struct Compliance {
+    pub user: Pubkey,
+    pub status: ComplianceStatus,
+    /// Unix seconds after which this stops clearing anyone, or 0 to never
+    /// expire. Screening is continuous, so a date is what forces a re-check.
+    pub expires_at: i64,
+    /// Who paid the account's rent (the setting admin); teardown refunds them.
+    pub rent_payer: Pubkey,
+    pub bump: u8,
+}
+
+impl Compliance {
+    /// Whether this record currently clears the wallet for gated actions.
+    pub fn is_live(&self) -> Result<bool> {
+        Ok(self.status == ComplianceStatus::Cleared
+            && (self.expires_at == 0 || self.expires_at > Clock::get()?.unix_timestamp))
+    }
 }
 
 /// Singleton config holding the sudo authority that manages admins.
@@ -76,22 +99,14 @@ pub struct Admin {
     pub bump: u8,
 }
 
-/// One (user, role) assignment together with its compliance status.
+/// One (user, role) assignment. Its existence is the grant.
 #[account]
 #[derive(InitSpace)]
 pub struct RoleAccount {
     pub user: Pubkey,
     pub role: Role,
-    pub permission: AccessPermission,
     /// Who paid the account's rent (the assigning admin); every teardown
     /// refunds them, whoever triggers it.
     pub rent_payer: Pubkey,
     pub bump: u8,
-}
-
-impl RoleAccount {
-    /// Whether this assignment is currently active (KYC-compliant).
-    pub fn is_compliant(&self) -> bool {
-        self.permission == AccessPermission::Compliant
-    }
 }

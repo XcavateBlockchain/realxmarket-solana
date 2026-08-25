@@ -13,8 +13,8 @@ use solana_keypair::Keypair;
 use solana_message::{Message, VersionedMessage};
 use solana_signer::Signer;
 use solana_transaction::versioned::VersionedTransaction;
-use xcavate_whitelist::state::{AccessPermission, Admin, Config, Role, RoleAccount};
-use xcavate_whitelist::{ADMIN_SEED, CONFIG_SEED, ROLE_SEED};
+use xcavate_whitelist::state::{Admin, Compliance, ComplianceStatus, Config, Role, RoleAccount};
+use xcavate_whitelist::{ADMIN_SEED, COMPLIANCE_SEED, CONFIG_SEED, ROLE_SEED};
 
 const SYS: Pubkey = anchor_lang::system_program::ID;
 
@@ -44,6 +44,10 @@ fn admin_pda(who: &Pubkey) -> Pubkey {
 
 fn role_pda(user: &Pubkey, role: Role) -> Pubkey {
     Pubkey::find_program_address(&[ROLE_SEED, user.as_ref(), &[role.seed_byte()]], &pid()).0
+}
+
+fn compliance_pda(user: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[COMPLIANCE_SEED, user.as_ref()], &pid()).0
 }
 
 // --- instruction builders ---
@@ -135,25 +139,6 @@ fn remove_role_ix(admin: &Pubkey, user: &Pubkey, role: Role, rent_payer: &Pubkey
             admin: admin_pda(admin),
             user: *user,
             rent_payer: *rent_payer,
-            role_account: role_pda(user, role),
-        }
-        .to_account_metas(None),
-    )
-}
-
-fn set_perm_ix(
-    admin: &Pubkey,
-    user: &Pubkey,
-    role: Role,
-    permission: AccessPermission,
-) -> Instruction {
-    Instruction::new_with_bytes(
-        pid(),
-        &xcavate_whitelist::instruction::SetPermission { role, permission }.data(),
-        xcavate_whitelist::accounts::SetPermission {
-            admin_signer: *admin,
-            admin: admin_pda(admin),
-            user: *user,
             role_account: role_pda(user, role),
         }
         .to_account_metas(None),
@@ -390,7 +375,6 @@ fn assign_role_works() {
     let parsed = read_role(&svm, &user, Role::RealEstateDeveloper);
     assert_eq!(parsed.user, user);
     assert_eq!(parsed.role, Role::RealEstateDeveloper);
-    assert!(parsed.is_compliant());
     // A role that was never granted has no account.
     assert!(svm
         .get_account(&role_pda(&user, Role::LettingAgent))
@@ -596,133 +580,6 @@ fn renounce_role_rejects_wrong_rent_destination() {
         &user,
         &[&user],
         "WrongRentPayer",
-    );
-}
-
-// ============================ set_permission ============================
-
-#[test]
-fn set_permission_round_trip() {
-    let (mut svm, _authority, admin) = setup_with_admin();
-    let user = Keypair::new().pubkey();
-    ok(
-        &mut svm,
-        assign_ix(&admin.pubkey(), &user, Role::RealEstateDeveloper),
-        &admin,
-        &[&admin],
-    );
-    assert!(read_role(&svm, &user, Role::RealEstateDeveloper).is_compliant());
-
-    ok(
-        &mut svm,
-        set_perm_ix(
-            &admin.pubkey(),
-            &user,
-            Role::RealEstateDeveloper,
-            AccessPermission::Revoked,
-        ),
-        &admin,
-        &[&admin],
-    );
-    assert!(!read_role(&svm, &user, Role::RealEstateDeveloper).is_compliant());
-
-    ok(
-        &mut svm,
-        set_perm_ix(
-            &admin.pubkey(),
-            &user,
-            Role::RealEstateDeveloper,
-            AccessPermission::Compliant,
-        ),
-        &admin,
-        &[&admin],
-    );
-    assert!(read_role(&svm, &user, Role::RealEstateDeveloper).is_compliant());
-}
-
-#[test]
-fn set_permission_fails_when_role_not_assigned() {
-    let (mut svm, _authority, admin) = setup_with_admin();
-    let user = Keypair::new().pubkey();
-    ok(
-        &mut svm,
-        assign_ix(&admin.pubkey(), &user, Role::RealEstateDeveloper),
-        &admin,
-        &[&admin],
-    );
-    // Different, unassigned role -> no account to mutate.
-    fails_with(
-        &mut svm,
-        set_perm_ix(
-            &admin.pubkey(),
-            &user,
-            Role::LettingAgent,
-            AccessPermission::Revoked,
-        ),
-        &admin,
-        &[&admin],
-        "AccountNotInitialized",
-    );
-}
-
-#[test]
-fn set_permission_fails_for_non_admin() {
-    let (mut svm, _authority, admin) = setup_with_admin();
-    let user = Keypair::new().pubkey();
-    ok(
-        &mut svm,
-        assign_ix(&admin.pubkey(), &user, Role::RealEstateDeveloper),
-        &admin,
-        &[&admin],
-    );
-    let imposter = funded(&mut svm);
-    fails_with(
-        &mut svm,
-        set_perm_ix(
-            &imposter.pubkey(),
-            &user,
-            Role::RealEstateDeveloper,
-            AccessPermission::Revoked,
-        ),
-        &imposter,
-        &[&imposter],
-        "AccountNotInitialized",
-    );
-}
-
-#[test]
-fn set_permission_fails_when_already_set() {
-    let (mut svm, _authority, admin) = setup_with_admin();
-    let user = Keypair::new().pubkey();
-    ok(
-        &mut svm,
-        assign_ix(&admin.pubkey(), &user, Role::RealEstateDeveloper),
-        &admin,
-        &[&admin],
-    );
-    ok(
-        &mut svm,
-        set_perm_ix(
-            &admin.pubkey(),
-            &user,
-            Role::RealEstateDeveloper,
-            AccessPermission::Revoked,
-        ),
-        &admin,
-        &[&admin],
-    );
-    // Revoking again is a no-op the program rejects.
-    fails_with(
-        &mut svm,
-        set_perm_ix(
-            &admin.pubkey(),
-            &user,
-            Role::RealEstateDeveloper,
-            AccessPermission::Revoked,
-        ),
-        &admin,
-        &[&admin],
-        "PermissionAlreadySet",
     );
 }
 
@@ -1059,7 +916,6 @@ fn assign_spv_confirmation_role_works() {
     );
     let parsed = read_role(&svm, &user, Role::SpvConfirmation);
     assert_eq!(parsed.role, Role::SpvConfirmation);
-    assert!(parsed.is_compliant());
 }
 
 #[test]
@@ -1084,5 +940,206 @@ fn readd_admin_after_removal() {
         assign_ix(&admin.pubkey(), &user, Role::RealEstateInvestor),
         &admin,
         &[&admin],
+    );
+}
+
+// ============================ compliance ============================
+
+fn set_compliance_ix(
+    admin: &Pubkey,
+    user: &Pubkey,
+    status: ComplianceStatus,
+    expires_at: i64,
+) -> Instruction {
+    Instruction::new_with_bytes(
+        pid(),
+        &xcavate_whitelist::instruction::SetCompliance { status, expires_at }.data(),
+        xcavate_whitelist::accounts::SetCompliance {
+            admin_signer: *admin,
+            admin: admin_pda(admin),
+            user: *user,
+            compliance: compliance_pda(user),
+            system_program: SYS,
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn remove_compliance_ix(admin: &Pubkey, user: &Pubkey, rent_payer: &Pubkey) -> Instruction {
+    Instruction::new_with_bytes(
+        pid(),
+        &xcavate_whitelist::instruction::RemoveCompliance {}.data(),
+        xcavate_whitelist::accounts::RemoveCompliance {
+            admin_signer: *admin,
+            admin: admin_pda(admin),
+            user: *user,
+            rent_payer: *rent_payer,
+            compliance: compliance_pda(user),
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn read_compliance(svm: &LiteSVM, user: &Pubkey) -> Compliance {
+    let account = svm.get_account(&compliance_pda(user)).unwrap();
+    Compliance::try_deserialize(&mut account.data.as_slice()).unwrap()
+}
+
+fn now(svm: &LiteSVM) -> i64 {
+    svm.get_sysvar::<anchor_lang::solana_program::clock::Clock>()
+        .unix_timestamp
+}
+
+#[test]
+fn set_compliance_creates_then_renews() {
+    let (mut svm, _authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    let first = now(&svm) + 1_000;
+
+    ok(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, first),
+        &admin,
+        &[&admin],
+    );
+    let record = read_compliance(&svm, &user);
+    assert_eq!(record.user, user);
+    assert_eq!(record.status, ComplianceStatus::Cleared);
+    assert_eq!(record.expires_at, first);
+    assert_eq!(record.rent_payer, admin.pubkey());
+
+    // Re-screening reuses the account rather than needing a new one.
+    let renewed = now(&svm) + 5_000;
+    ok(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, renewed),
+        &admin,
+        &[&admin],
+    );
+    assert_eq!(read_compliance(&svm, &user).expires_at, renewed);
+}
+
+// A second admin renewing must not become the rent destination, or removal
+// would refund the wrong wallet.
+#[test]
+fn renewal_keeps_the_original_rent_payer() {
+    let (mut svm, authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    let other = funded(&mut svm);
+    ok(
+        &mut svm,
+        add_admin_ix(&authority.pubkey(), &other.pubkey()),
+        &authority,
+        &[&authority],
+    );
+
+    ok(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, 0),
+        &admin,
+        &[&admin],
+    );
+    ok(
+        &mut svm,
+        set_compliance_ix(&other.pubkey(), &user, ComplianceStatus::Blocked, 0),
+        &other,
+        &[&other],
+    );
+
+    let record = read_compliance(&svm, &user);
+    assert_eq!(record.status, ComplianceStatus::Blocked);
+    assert_eq!(record.rent_payer, admin.pubkey());
+}
+
+// An already-expired clearance is never what the caller meant, and would sit
+// on file looking like a screening that had been done.
+#[test]
+fn cleared_rejects_an_expiry_in_the_past() {
+    let (mut svm, _authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    let past = now(&svm) - 1;
+
+    fails_with(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, past),
+        &admin,
+        &[&admin],
+        "InvalidExpiry",
+    );
+}
+
+// Blocking does not lapse, so an expiry on it would be a contradiction.
+#[test]
+fn blocked_rejects_an_expiry() {
+    let (mut svm, _authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    let future = now(&svm) + 1_000;
+
+    fails_with(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Blocked, future),
+        &admin,
+        &[&admin],
+        "InvalidExpiry",
+    );
+}
+
+#[test]
+fn set_compliance_is_admin_only() {
+    let (mut svm, _authority, _admin) = setup_with_admin();
+    let imposter = funded(&mut svm);
+    let user = funded(&mut svm).pubkey();
+
+    fails_with(
+        &mut svm,
+        set_compliance_ix(&imposter.pubkey(), &user, ComplianceStatus::Cleared, 0),
+        &imposter,
+        &[&imposter],
+        "AccountNotInitialized",
+    );
+}
+
+#[test]
+fn remove_compliance_refunds_the_recorded_payer() {
+    let (mut svm, _authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    ok(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, 0),
+        &admin,
+        &[&admin],
+    );
+
+    let before = svm.get_account(&admin.pubkey()).unwrap().lamports;
+    ok(
+        &mut svm,
+        remove_compliance_ix(&admin.pubkey(), &user, &admin.pubkey()),
+        &admin,
+        &[&admin],
+    );
+    assert!(svm
+        .get_account(&compliance_pda(&user))
+        .is_none_or(|a| a.data.is_empty()));
+    assert!(svm.get_account(&admin.pubkey()).unwrap().lamports > before);
+}
+
+#[test]
+fn remove_compliance_rejects_a_foreign_rent_payer() {
+    let (mut svm, _authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    let thief = funded(&mut svm).pubkey();
+    ok(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, 0),
+        &admin,
+        &[&admin],
+    );
+
+    fails_with(
+        &mut svm,
+        remove_compliance_ix(&admin.pubkey(), &user, &thief),
+        &admin,
+        &[&admin],
+        "WrongRentPayer",
     );
 }

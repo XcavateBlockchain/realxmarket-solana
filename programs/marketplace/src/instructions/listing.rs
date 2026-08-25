@@ -9,7 +9,7 @@ use crate::state::{
 };
 use crate::vault::lock_to_vault;
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// List a property for a primary share sale. RealEstateDeveloper-only, and one
 /// of the compliance-gated calls: the role must exist AND carry the compliant
@@ -36,9 +36,17 @@ pub struct ListProperty<'info> {
         ],
         bump = developer_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = developer_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub developer_role: Box<Account<'info, RoleAccount>>,
+
+    /// The caller's compliance record, owned by the roles program.
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, developer.key().as_ref()],
+        bump = developer_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = developer_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub developer_compliance: Box<Account<'info, Compliance>>,
 
     /// The region the property sits in, owned by the regions program. Read for
     /// the tax and listing-duration snapshot.
@@ -234,8 +242,7 @@ pub fn list_property_handler(
 pub struct UpgradeObject<'info> {
     pub developer: Signer<'info>,
 
-    /// The caller's RealEstateDeveloper role, owned by the roles program;
-    /// must be compliant, since repricing steers investor money.
+    /// The caller's RealEstateDeveloper role, owned by the roles program.
     #[account(
         seeds = [
             xcavate_whitelist::ROLE_SEED,
@@ -244,9 +251,20 @@ pub struct UpgradeObject<'info> {
         ],
         bump = developer_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = developer_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub developer_role: Box<Account<'info, RoleAccount>>,
+
+    /// Repricing steers investor money, so the developer's KYC is checked too.
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, developer.key().as_ref()],
+        bump = developer_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = developer_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub developer_compliance: Box<Account<'info, Compliance>>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,

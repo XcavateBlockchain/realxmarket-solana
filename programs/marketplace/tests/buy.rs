@@ -121,16 +121,10 @@ fn second_buy_accumulates() {
 }
 
 #[test]
-fn buy_requires_compliant_investor() {
+fn buy_requires_a_compliant_investor() {
     let (mut svm, admin, sponsor) = setup_direct();
     let investor = new_investor(&mut svm, &admin);
-    set_permission(
-        &mut svm,
-        &admin,
-        &investor.pubkey(),
-        Role::RealEstateInvestor,
-        false,
-    );
+    set_compliance(&mut svm, &admin, &investor.pubkey(), false);
 
     fails_with(
         &mut svm,

@@ -18,14 +18,14 @@ use anchor_spl::token_2022_extensions::{
 };
 
 use crate::constants::{
-    LISTING_SEED, MINT_AUTH_SEED, PROPERTY_SEED, PROPERTY_VAULT_SEED, SHARE_MINT_SEED,
+    CONFIG_SEED, LISTING_SEED, MINT_AUTH_SEED, PROPERTY_SEED, PROPERTY_VAULT_SEED, SHARE_MINT_SEED,
 };
 use crate::error::MarketplaceError;
 use crate::state::{
-    Listing, ListingStatus, PropertyAsset, MAX_PROPERTY_NAME_LEN, MAX_PROPERTY_URI_LEN,
+    Config, Listing, ListingStatus, PropertyAsset, MAX_PROPERTY_NAME_LEN, MAX_PROPERTY_URI_LEN,
 };
 
-use xcavate_whitelist::state::{Role, RoleAccount};
+use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 
 /// Second half of listing a property: creates the Token-2022 share mint and
 /// mints the whole supply into the property vault, then opens the listing for
@@ -42,9 +42,7 @@ pub struct InitPropertyAssets<'info> {
     #[account(mut)]
     pub developer: Signer<'info>,
 
-    /// The caller's RealEstateDeveloper role. The whole two-step listing is
-    /// one compliance-gated flow, so the second step re-checks the flag; a
-    /// developer revoked between the steps can't open the sale.
+    /// The caller's RealEstateDeveloper role, owned by the roles program.
     #[account(
         seeds = [
             xcavate_whitelist::ROLE_SEED,
@@ -53,9 +51,21 @@ pub struct InitPropertyAssets<'info> {
         ],
         bump = developer_role.bump,
         seeds::program = xcavate_whitelist::ID,
-        constraint = developer_role.is_compliant() @ MarketplaceError::NotCompliant,
     )]
     pub developer_role: Box<Account<'info, RoleAccount>>,
+
+    /// The two-step listing is one gated flow, so the second step re-checks
+    /// both claims. A developer revoked between the steps can't open the sale.
+    #[account(
+        seeds = [xcavate_whitelist::COMPLIANCE_SEED, developer.key().as_ref()],
+        bump = developer_compliance.bump,
+        seeds::program = xcavate_whitelist::ID,
+        constraint = developer_compliance.is_live()? @ MarketplaceError::NotCompliant,
+    )]
+    pub developer_compliance: Box<Account<'info, Compliance>>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,

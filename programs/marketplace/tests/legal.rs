@@ -116,7 +116,7 @@ fn assign_requires_the_property_region() {
 fn assign_requires_a_compliant_lawyer() {
     let (mut svm, admin, developer, _investors) = setup_sold_out();
     let lawyer = new_registered_lawyer(&mut svm, &admin, 1);
-    set_permission(&mut svm, &admin, &lawyer.pubkey(), Role::Lawyer, false);
+    set_compliance(&mut svm, &admin, &lawyer.pubkey(), false);
     fails_with(
         &mut svm,
         assign_dev_lawyer_ix(&developer.pubkey(), 0, &lawyer.pubkey()),
