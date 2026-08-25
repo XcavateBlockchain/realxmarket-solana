@@ -1464,6 +1464,38 @@ pub fn close_dead_listing_ix_for(
     )
 }
 
+/// Same triple layout as the dead-listing close, for a settled listing.
+pub fn close_settled_payment_accounts_ix(
+    cranker: &Pubkey,
+    listing_id: u64,
+    mints: &[Pubkey],
+) -> Instruction {
+    let mut accounts = marketplace::accounts::CloseSettledPaymentAccounts {
+        cranker: *cranker,
+        config: marketplace_config(),
+        rent_collector: sponsor().pubkey(),
+        listing: listing_pda(listing_id),
+        listing_vault: listing_vault_pda(listing_id),
+        share_token_program: anchor_spl::token_2022::ID,
+        payment_token_program: TOKEN_PROGRAM_ID,
+    }
+    .to_account_metas(None);
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    for &mint in mints {
+        accounts.push(AccountMeta::new(
+            payment_ata(&listing_vault_pda(listing_id), &mint),
+            false,
+        ));
+        accounts.push(AccountMeta::new_readonly(mint, false));
+        accounts.push(AccountMeta::new(payment_ata(&treasury(), &mint), false));
+    }
+    Instruction::new_with_bytes(
+        mid(),
+        &marketplace::instruction::CloseSettledPaymentAccounts { listing_id }.data(),
+        accounts,
+    )
+}
+
 /// One payout group per mint, in the listing's collected order. Payment
 /// accounts are the deterministic test accounts for each party.
 #[allow(clippy::too_many_arguments)]

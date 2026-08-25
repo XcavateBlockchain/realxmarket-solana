@@ -442,3 +442,96 @@ fn price_update_cannot_skew_the_tax_obligation() {
     assert_eq!(listing.collected[0].funds, funds);
     assert_eq!(listing.collected[0].tax, funds * 300 / 10_000);
 }
+
+// --- settled-vault rent recovery ---
+
+#[test]
+fn settled_vault_rent_returns_to_the_sponsor() {
+    let (mut svm, _admin, _investors) = finalized_property();
+    let cranker = funded(&mut svm);
+    let vault = listing_vault_pda(0);
+    let tgbp_ata = payment_ata(&vault, &tgbp_mint());
+    let gbp6_ata = payment_ata(&vault, &gbp6_mint());
+    let rent =
+        svm.get_account(&tgbp_ata).unwrap().lamports + svm.get_account(&gbp6_ata).unwrap().lamports;
+    let before = svm.get_account(&sponsor().pubkey()).unwrap().lamports;
+
+    ok(
+        &mut svm,
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]),
+        &cranker,
+        &[&cranker],
+    );
+
+    for ata in [tgbp_ata, gbp6_ata] {
+        assert!(svm
+            .get_account(&ata)
+            .map(|a| a.data.is_empty())
+            .unwrap_or(true));
+    }
+    let after = svm.get_account(&sponsor().pubkey()).unwrap().lamports;
+    assert_eq!(after - before, rent);
+}
+
+#[test]
+fn a_post_settlement_donation_sweeps_to_the_treasury() {
+    let (mut svm, _admin, _investors) = finalized_property();
+    let cranker = funded(&mut svm);
+    let vault = listing_vault_pda(0);
+    set_token_account_for(
+        &mut svm,
+        tgbp_mint(),
+        payment_ata(&vault, &tgbp_mint()),
+        &vault,
+        5,
+    );
+    let before = token_balance(&svm, &payment_ata(&treasury(), &tgbp_mint()));
+
+    ok(
+        &mut svm,
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]),
+        &cranker,
+        &[&cranker],
+    );
+
+    let after = token_balance(&svm, &payment_ata(&treasury(), &tgbp_mint()));
+    assert_eq!(after - before, 5);
+}
+
+#[test]
+fn an_unsettled_listing_keeps_its_vault_accounts() {
+    let (mut svm, _admin, _investors) = build_property(false);
+    let cranker = funded(&mut svm);
+    fails_with(
+        &mut svm,
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]),
+        &cranker,
+        &[&cranker],
+        "PropertyNotFinalized",
+    );
+}
+
+#[test]
+fn a_decoy_vault_account_is_rejected() {
+    let (mut svm, _admin, _investors) = finalized_property();
+    let cranker = funded(&mut svm);
+    let mut ix =
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]);
+    // First triple's vault slot follows the 7 struct accounts.
+    ix.accounts[7].pubkey = payment_ata(&cranker.pubkey(), &tgbp_mint());
+    fails_with(&mut svm, ix, &cranker, &[&cranker], "WrongVaultAccount");
+}
+
+#[test]
+fn rerunning_the_settled_close_is_a_no_op() {
+    let (mut svm, _admin, _investors) = finalized_property();
+    let cranker = funded(&mut svm);
+    let ix = close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]);
+    ok(&mut svm, ix.clone(), &cranker, &[&cranker]);
+    let before = svm.get_account(&sponsor().pubkey()).unwrap().lamports;
+    ok(&mut svm, ix, &cranker, &[&cranker]);
+    assert_eq!(
+        svm.get_account(&sponsor().pubkey()).unwrap().lamports,
+        before
+    );
+}

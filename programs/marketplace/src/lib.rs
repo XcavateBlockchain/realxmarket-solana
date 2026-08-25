@@ -141,6 +141,13 @@ pub mod marketplace {
         teardown::close_dead_listing_handler(ctx, listing_id)
     }
 
+    pub fn close_settled_payment_accounts<'info>(
+        ctx: Context<'info, CloseSettledPaymentAccounts<'info>>,
+        listing_id: u64,
+    ) -> Result<()> {
+        teardown::close_settled_payment_accounts_handler(ctx, listing_id)
+    }
+
     pub fn assign_developer_lawyer(
         ctx: Context<AssignDeveloperLawyer>,
         listing_id: u64,

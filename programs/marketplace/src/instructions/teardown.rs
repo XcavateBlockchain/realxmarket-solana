@@ -198,22 +198,115 @@ pub fn close_dead_listing_handler<'info>(
         ))?;
     }
 
-    // The listing vault's payment accounts, one triple per mint the
-    // listing ever collected, in `collected` order. Keyed off the
-    // listing's own record rather than live config, so rotating a mint
-    // out of the accepted list can't strand a balance here.
-    let mints: Vec<Pubkey> = ctx
-        .accounts
-        .listing
-        .collected
-        .iter()
-        .map(|c| c.mint)
-        .collect();
+    // Money still here is either dust or unsettled fees; the lawyer's
+    // share must leave through the settlement first.
+    let sweep_allowed = ctx.accounts.listing.status != ListingStatus::Cancelled
+        || ctx.accounts.listing.spv_costs_due == 0;
+    close_vault_payment_accounts(
+        &ctx.accounts.listing,
+        ctx.remaining_accounts,
+        &ctx.accounts.listing_vault,
+        listing_vault_seeds,
+        &ctx.accounts.config.treasury,
+        &ctx.accounts.rent_collector,
+        &ctx.accounts.share_token_program.key(),
+        &ctx.accounts.payment_token_program.key(),
+        sweep_allowed,
+    )?;
+
+    emit!(DeadListingClosed {
+        listing_id,
+        developer: ctx.accounts.listing.developer,
+    });
+    Ok(())
+}
+
+/// Recover the rent on a settled listing's payment accounts. A finalized
+/// listing lives on forever, so `close_dead_listing` never reaches these;
+/// once the settlement drains them they are just parked rent. Permissionless.
+///
+/// The remaining accounts are the same (vault account, mint, treasury
+/// account) triples as `close_dead_listing`, one per collected mint in the
+/// listing's order. Anything donated since settlement sweeps to the
+/// treasury, so a stray unit can't wedge the close.
+#[derive(Accounts)]
+#[instruction(listing_id: u64)]
+pub struct CloseSettledPaymentAccounts<'info> {
+    pub cranker: Signer<'info>,
+
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    /// CHECK: the sponsor wallet; receives the payment accounts' rent.
+    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
+    pub rent_collector: UncheckedAccount<'info>,
+
+    #[account(
+        seeds = [LISTING_SEED, &listing_id.to_le_bytes()],
+        bump = listing.bump,
+    )]
+    pub listing: Box<Account<'info, Listing>>,
+
+    /// CHECK: the listing vault authority; signs the sweeps and closes.
+    #[account(seeds = [LISTING_VAULT_SEED, &listing_id.to_le_bytes()], bump)]
+    pub listing_vault: UncheckedAccount<'info>,
+
+    pub share_token_program: Program<'info, Token2022>,
+    /// The token program owning the remaining payment accounts.
+    pub payment_token_program: Interface<'info, TokenInterface>,
+}
+
+pub fn close_settled_payment_accounts_handler<'info>(
+    ctx: Context<'info, CloseSettledPaymentAccounts<'info>>,
+    listing_id: u64,
+) -> Result<()> {
     require!(
-        ctx.remaining_accounts.len() == mints.len() * 3,
+        ctx.accounts.listing.status == ListingStatus::Finalized,
+        MarketplaceError::PropertyNotFinalized
+    );
+
+    let id_bytes = listing_id.to_le_bytes();
+    let listing_vault_seeds: &[&[u8]] =
+        &[LISTING_VAULT_SEED, &id_bytes, &[ctx.bumps.listing_vault]];
+    close_vault_payment_accounts(
+        &ctx.accounts.listing,
+        ctx.remaining_accounts,
+        &ctx.accounts.listing_vault,
+        listing_vault_seeds,
+        &ctx.accounts.config.treasury,
+        &ctx.accounts.rent_collector,
+        &ctx.accounts.share_token_program.key(),
+        &ctx.accounts.payment_token_program.key(),
+        true,
+    )?;
+
+    emit!(SettledVaultClosed { listing_id });
+    Ok(())
+}
+
+/// Sweep and close the listing vault's payment accounts, one (vault account,
+/// mint, treasury account) triple per collected mint, in the listing's own
+/// order rather than live config, so rotating a mint out of the accepted
+/// list can't strand a balance. Balances go to the treasury, rent to the
+/// sponsor. `sweep_allowed` false refuses on a balance instead of sweeping.
+#[allow(clippy::too_many_arguments)]
+fn close_vault_payment_accounts<'info>(
+    listing: &Account<'info, Listing>,
+    triples: &[AccountInfo<'info>],
+    listing_vault: &UncheckedAccount<'info>,
+    listing_vault_seeds: &[&[u8]],
+    treasury: &Pubkey,
+    rent_collector: &UncheckedAccount<'info>,
+    share_token_program: &Pubkey,
+    payment_token_program: &Pubkey,
+    sweep_allowed: bool,
+) -> Result<()> {
+    require!(
+        triples.len() == listing.collected.len() * 3,
         MarketplaceError::InvalidConfig
     );
-    for (expected_mint, triple) in mints.iter().zip(ctx.remaining_accounts.chunks(3)) {
+    for (entry, triple) in listing.collected.iter().zip(triples.chunks(3)) {
+        let expected_mint = &entry.mint;
         let (vault_account, mint, treasury_account) = (&triple[0], &triple[1], &triple[2]);
         require!(mint.key == expected_mint, MarketplaceError::InvalidMint);
         // The mint's owner is its token program; the guard vetted it at
@@ -221,14 +314,13 @@ pub fn close_dead_listing_handler<'info>(
         // must be one of the two the instruction carries.
         let token_program = mint.owner;
         require!(
-            *token_program == ctx.accounts.share_token_program.key()
-                || *token_program == ctx.accounts.payment_token_program.key(),
+            token_program == share_token_program || token_program == payment_token_program,
             MarketplaceError::InvalidMint
         );
         require!(
             vault_account.key()
                 == anchor_spl::associated_token::get_associated_token_address_with_program_id(
-                    &ctx.accounts.listing_vault.key(),
+                    &listing_vault.key(),
                     expected_mint,
                     token_program,
                 ),
@@ -245,17 +337,11 @@ pub fn close_dead_listing_handler<'info>(
                 .amount
         };
         if amount > 0 {
-            // Money still here is either dust or unsettled fees; the lawyer's
-            // share must leave through the settlement first.
-            require!(
-                ctx.accounts.listing.status != ListingStatus::Cancelled
-                    || ctx.accounts.listing.spv_costs_due == 0,
-                MarketplaceError::CostsStillDue
-            );
+            require!(sweep_allowed, MarketplaceError::CostsStillDue);
             require!(
                 treasury_account.key()
                     == anchor_spl::associated_token::get_associated_token_address_with_program_id(
-                        &ctx.accounts.config.treasury,
+                        treasury,
                         expected_mint,
                         token_program,
                     ),
@@ -274,7 +360,7 @@ pub fn close_dead_listing_handler<'info>(
                         from: vault_account.clone(),
                         mint: mint.clone(),
                         to: treasury_account.clone(),
-                        authority: ctx.accounts.listing_vault.to_account_info(),
+                        authority: listing_vault.to_account_info(),
                     },
                     &[listing_vault_seeds],
                 ),
@@ -286,17 +372,12 @@ pub fn close_dead_listing_handler<'info>(
             *token_program,
             ClosePaymentAccount {
                 account: vault_account.clone(),
-                destination: ctx.accounts.rent_collector.to_account_info(),
-                authority: ctx.accounts.listing_vault.to_account_info(),
+                destination: rent_collector.to_account_info(),
+                authority: listing_vault.to_account_info(),
             },
             &[listing_vault_seeds],
         ))?;
     }
-
-    emit!(DeadListingClosed {
-        listing_id,
-        developer: ctx.accounts.listing.developer,
-    });
     Ok(())
 }
 
@@ -304,4 +385,9 @@ pub fn close_dead_listing_handler<'info>(
 pub struct DeadListingClosed {
     pub listing_id: u64,
     pub developer: Pubkey,
+}
+
+#[event]
+pub struct SettledVaultClosed {
+    pub listing_id: u64,
 }
