@@ -665,10 +665,69 @@ fn anothers_registry_accounts_are_rejected_at_accept() {
     bid(&mut svm, &offeror, 10, BID);
 
     let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
-    for account in ix.accounts.iter_mut() {
-        if account.pubkey == compliance_pda(&offeror.pubkey()) {
-            account.pubkey = compliance_pda(&seller.pubkey());
-        }
-    }
+    swap_account(
+        &mut ix,
+        compliance_pda(&offeror.pubkey()),
+        compliance_pda(&seller.pubkey()),
+    );
     fails_with_budget(&mut svm, ix, seller, &[seller], "WrongRegistryAccount");
+}
+
+#[test]
+fn anothers_role_cannot_stand_in_at_accept() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    swap_account(
+        &mut ix,
+        role_pda(&seller.pubkey(), Role::RealEstateInvestor),
+        role_pda(&offeror.pubkey(), Role::RealEstateInvestor),
+    );
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongRegistryAccount");
+}
+
+#[test]
+fn accept_fees_go_only_to_the_treasury() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    // The seller names themselves as the fee's destination.
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    swap_account(&mut ix, treasury(), seller.pubkey());
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongPayee");
+}
+
+#[test]
+fn a_decoy_offer_vault_is_rejected() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let vault_ata = payment_ata(&offer_vault_pda(0, &offeror.pubkey()), &tgbp_mint());
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    swap_account(
+        &mut ix,
+        vault_ata,
+        payment_ata(&seller.pubkey(), &tgbp_mint()),
+    );
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
+}
+
+#[test]
+fn accept_needs_the_real_income_ledger() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    let fake = Pubkey::new_unique();
+    swap_account(&mut ix, property_income_pda(0), fake);
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
 }

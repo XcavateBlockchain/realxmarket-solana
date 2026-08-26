@@ -535,3 +535,20 @@ fn rerunning_the_settled_close_is_a_no_op() {
         before
     );
 }
+
+#[test]
+fn payout_groups_must_match_the_collected_mints() {
+    let (mut svm, _admin, developer, _investors, dl, sl, operator) = setup_approved(false);
+    let cranker = funded(&mut svm);
+
+    // The second group claims to be tGBP again instead of gbp6.
+    let mut ix = deal_ix(
+        &cranker.pubkey(),
+        &developer.pubkey(),
+        &dl.pubkey(),
+        &sl.pubkey(),
+        &operator.pubkey(),
+    );
+    swap_account(&mut ix, gbp6_mint(), tgbp_mint());
+    fails_with(&mut svm, ix, &cranker, &[&cranker], "InvalidMint");
+}

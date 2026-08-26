@@ -992,3 +992,45 @@ fn resign_needs_a_case() {
         "NotCaseLawyer",
     );
 }
+
+// The finalizer must bring the actual winner's registry for the engagement
+// checks; the runner-up's can't stand in.
+#[test]
+fn finalize_needs_the_winners_registry() {
+    let (mut svm, admin, _developer, (a, b, c)) = setup_with_spv();
+    let spn = sponsor();
+    let l1 = new_registered_lawyer(&mut svm, &admin, 1);
+    let l2 = new_registered_lawyer(&mut svm, &admin, 1);
+    for lawyer in [&l1, &l2] {
+        ok(
+            &mut svm,
+            claim_spv_ix(&lawyer.pubkey(), 0, 1, COSTS),
+            lawyer,
+            &[lawyer, &sponsor()],
+        );
+    }
+    for (voter, choice, amount) in [(&a, &l1, 34), (&b, &l2, 33), (&c, &l1, 10)] {
+        ok(
+            &mut svm,
+            vote_spv_ix(&voter.pubkey(), 0, 1, &choice.pubkey(), None, amount),
+            &spn,
+            &[&spn, voter],
+        );
+    }
+    warp(&mut svm, 10_001);
+
+    let cranker = funded(&mut svm);
+    fails_with(
+        &mut svm,
+        finalize_spv_ix(
+            &cranker.pubkey(),
+            0,
+            1,
+            Some(&l2.pubkey()),
+            &[l1.pubkey(), l2.pubkey()],
+        ),
+        &cranker,
+        &[&cranker],
+        "WrongLawyer",
+    );
+}

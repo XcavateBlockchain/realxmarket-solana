@@ -787,3 +787,17 @@ fn proposal_and_challenge_votes_carry_full_weight_at_once() {
     );
     assert_eq!(holding_of(&svm, ASSET, &voter.pubkey()).locked(), 0);
 }
+
+#[test]
+fn unlock_pins_the_proposal_account() {
+    let (mut svm, admin, agent) = gov_setup();
+    propose(&mut svm, &agent, 1, MID_AMOUNT);
+    let voter = new_holder(&mut svm, &admin, ASSET, 50);
+    vote(&mut svm, &voter, 1, VoteChoice::Yes, 30);
+    warp(&mut svm, VOTING_TIME + 1);
+
+    // A different proposal's account standing where this vote's must be.
+    let mut ix = unlock_proposal_votes_ix(&voter.pubkey(), ASSET, 1);
+    swap_account(&mut ix, proposal_pda(ASSET, 1), proposal_pda(ASSET, 2));
+    fails_with(&mut svm, ix, &voter, &[&voter], "WrongGovernanceId");
+}

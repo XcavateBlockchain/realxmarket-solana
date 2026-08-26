@@ -537,6 +537,17 @@ pub fn fails_with(
     }
 }
 
+/// Replace every occurrence of one account in an instruction, for the
+/// stand-in tests. If the swap stops landing after a builder change, the
+/// test's `fails_with` catches the unexpectedly healthy transaction.
+pub fn swap_account(ix: &mut Instruction, from: Pubkey, to: Pubkey) {
+    for account in ix.accounts.iter_mut() {
+        if account.pubkey == from {
+            account.pubkey = to;
+        }
+    }
+}
+
 /// A SOL-funded keypair (for fees + account rent).
 pub fn funded(svm: &mut LiteSVM) -> Keypair {
     let kp = Keypair::new();

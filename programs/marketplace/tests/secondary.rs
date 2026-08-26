@@ -330,11 +330,7 @@ fn buy_needs_the_real_income_ledger() {
     // A stand-in income account can't skip the settlements.
     let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
     let fake = Pubkey::new_unique();
-    for meta in ix.accounts.iter_mut() {
-        if meta.pubkey == property_income_pda(0) {
-            meta.pubkey = fake;
-        }
-    }
+    swap_account(&mut ix, property_income_pda(0), fake);
     fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongVaultAccount");
 }
 
@@ -378,4 +374,48 @@ fn close_rejects_a_holding_still_in_use() {
         &[&cranker],
         "HoldingNotEmpty",
     );
+}
+
+#[test]
+fn anothers_record_cannot_clear_the_buyer() {
+    let (mut svm, admin, investors) = finalized_property();
+    let seller = &investors[1];
+    relist(&mut svm, seller, 0, 10);
+    let buyer = new_investor(&mut svm, &admin);
+    give_tgbp(&mut svm, &buyer.pubkey(), 100_000_000_000);
+
+    // The seller's (cleared) compliance record standing in for the buyer's.
+    let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
+    swap_account(
+        &mut ix,
+        compliance_pda(&buyer.pubkey()),
+        compliance_pda(&seller.pubkey()),
+    );
+    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongRegistryAccount");
+}
+
+#[test]
+fn send_needs_the_real_income_ledger() {
+    let (mut svm, _admin, investors) = finalized_property();
+    let (sender, receiver) = (&investors[1], &investors[2]);
+
+    let mut ix = send_shares_ix(&sender.pubkey(), &receiver.pubkey(), 0, 5);
+    let fake = Pubkey::new_unique();
+    swap_account(&mut ix, property_income_pda(0), fake);
+    fails_with(&mut svm, ix, sender, &[sender], "WrongVaultAccount");
+}
+
+#[test]
+fn send_rejects_a_decoy_share_account() {
+    let (mut svm, _admin, investors) = finalized_property();
+    let (sender, receiver) = (&investors[1], &investors[2]);
+
+    // The receiver's account standing where the sender's must be.
+    let mut ix = send_shares_ix(&sender.pubkey(), &receiver.pubkey(), 0, 5);
+    swap_account(
+        &mut ix,
+        investor_share_ata(0, &sender.pubkey()),
+        investor_share_ata(0, &receiver.pubkey()),
+    );
+    fails_with(&mut svm, ix, sender, &[sender], "WrongVaultAccount");
 }

@@ -455,6 +455,21 @@ fn close_dead_listing_sweeps_everything() {
     let dev_before = svm.get_account(&developer.pubkey()).unwrap().lamports;
     let sponsor_before = svm.get_account(&sponsor.pubkey()).unwrap().lamports;
     let cranker = funded(&mut svm);
+    // The triples must name the mints the listing collected, in order; a
+    // different accepted mint doesn't do.
+    fails_with(
+        &mut svm,
+        close_dead_listing_ix_for(
+            &cranker.pubkey(),
+            0,
+            &developer.pubkey(),
+            true,
+            &[gbp6_mint()],
+        ),
+        &cranker,
+        &[&cranker],
+        "InvalidMint",
+    );
     ok(
         &mut svm,
         close_dead_listing_ix(&cranker.pubkey(), 0, &developer.pubkey(), true),
