@@ -2023,6 +2023,13 @@ pub fn warp(svm: &mut LiteSVM, secs: i64) {
     svm.set_sysvar(&clock);
 }
 
+/// Set the clock to an absolute timestamp, for exact-boundary tests.
+pub fn warp_to(svm: &mut LiteSVM, ts: i64) {
+    let mut clock = svm.get_sysvar::<Clock>();
+    clock.unix_timestamp = ts;
+    svm.set_sysvar(&clock);
+}
+
 // Reads a program binary from target/deploy at runtime rather than via
 // include_bytes!, so the test crates compile on a fresh clone where the .so
 // files don't exist yet (anchor's IDL pass compiles tests too).

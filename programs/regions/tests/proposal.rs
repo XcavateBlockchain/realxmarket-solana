@@ -217,6 +217,77 @@ fn vote_after_expiry_fails() {
     );
 }
 
+// Default params run a 1_000s vote with a 100s minimum hold, putting the
+// cutoff 100s before expiry. Its first second is already too late.
+#[test]
+fn the_cutoff_second_is_too_late_to_vote() {
+    let (mut svm, operator, _authority) = setup();
+    let id = next_proposal_id(&svm);
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 1, id),
+        &operator,
+        &[&operator],
+    );
+
+    warp(&mut svm, 1_000 - 100 - 1);
+    let early = actor(&mut svm);
+    ok(
+        &mut svm,
+        vote_ix(&early.pubkey(), 1, id, Vote::Yes, 200_000_000),
+        &early,
+        &[&early],
+    );
+    warp(&mut svm, 1);
+    let late = actor(&mut svm);
+    fails_with(
+        &mut svm,
+        vote_ix(&late.pubkey(), 1, id, Vote::Yes, 200_000_000),
+        &late,
+        &[&late],
+        "VoteTooLate",
+    );
+}
+
+// At the expiry second voting is over and finalizing is allowed, with no
+// second belonging to both.
+#[test]
+fn the_expiry_second_belongs_to_the_finalizer() {
+    let (mut svm, operator, _authority) = setup();
+    let id = next_proposal_id(&svm);
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 1, id),
+        &operator,
+        &[&operator],
+    );
+    let voter = actor(&mut svm);
+    ok(
+        &mut svm,
+        vote_ix(&voter.pubkey(), 1, id, Vote::Yes, 200_000_000),
+        &voter,
+        &[&voter],
+    );
+
+    warp(&mut svm, 1_000);
+    let late = actor(&mut svm);
+    fails_with(
+        &mut svm,
+        vote_ix(&late.pubkey(), 1, id, Vote::Yes, 200_000_000),
+        &late,
+        &[&late],
+        "ProposalExpired",
+    );
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        finalize_ix(&cranker.pubkey(), 1, id, &operator.pubkey()),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(region_state_of(&svm, 1).status, RegionStatus::Passed);
+}
+
 #[test]
 fn vote_with_insufficient_balance_fails() {
     let (mut svm, operator, _authority) = setup();

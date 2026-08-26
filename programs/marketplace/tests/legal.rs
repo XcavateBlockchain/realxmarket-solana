@@ -140,6 +140,30 @@ fn assign_after_the_deadline_fails() {
     );
 }
 
+// The legal side checks `<= deadline` and the exits `> deadline`, so the
+// deadline second itself still belongs to the lawyers.
+#[test]
+fn the_deadline_second_still_belongs_to_the_lawyers() {
+    let (mut svm, admin, developer, (a, _b, _c)) = setup_sold_out();
+    let lawyer = new_registered_lawyer(&mut svm, &admin, 1);
+
+    let deadline = listing_of(&svm, 0).legal_deadline;
+    warp_to(&mut svm, deadline);
+    fails_with(
+        &mut svm,
+        withdraw_legal_expired_ix(&a.pubkey(), 0),
+        &a,
+        &[&a],
+        "LegalProcessNotExpired",
+    );
+    ok(
+        &mut svm,
+        assign_dev_lawyer_ix(&developer.pubkey(), 0, &lawyer.pubkey()),
+        &developer,
+        &[&developer],
+    );
+}
+
 #[test]
 fn assign_only_once() {
     let (mut svm, admin, developer, _investors) = setup_sold_out();
@@ -438,6 +462,50 @@ fn vote_after_close_fails() {
         &spn,
         &[&spn, &a],
         "VotingClosed",
+    );
+}
+
+// The expiry second is already the finalizer's: too late to vote, not too
+// early to count.
+#[test]
+fn the_expiry_second_belongs_to_the_count() {
+    let (mut svm, admin, _developer, (a, _b, _c)) = setup_with_spv();
+    let spn = sponsor();
+    let lawyer = new_registered_lawyer(&mut svm, &admin, 1);
+    ok(
+        &mut svm,
+        claim_spv_ix(&lawyer.pubkey(), 0, 1, COSTS),
+        &lawyer,
+        &[&lawyer, &sponsor()],
+    );
+    ok(
+        &mut svm,
+        vote_spv_ix(&a.pubkey(), 0, 1, &lawyer.pubkey(), None, 34),
+        &spn,
+        &[&spn, &a],
+    );
+
+    let expiry = listing_of(&svm, 0).spv_election.expiry;
+    warp_to(&mut svm, expiry);
+    fails_with(
+        &mut svm,
+        vote_spv_ix(&a.pubkey(), 0, 1, &lawyer.pubkey(), None, 10),
+        &spn,
+        &[&spn, &a],
+        "VotingClosed",
+    );
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        finalize_spv_ix(
+            &cranker.pubkey(),
+            0,
+            1,
+            Some(&lawyer.pubkey()),
+            &[lawyer.pubkey()],
+        ),
+        &cranker,
+        &[&cranker],
     );
 }
 

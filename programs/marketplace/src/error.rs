@@ -198,9 +198,6 @@ pub enum MarketplaceError {
     /// Both verdicts must rule on the same document set.
     #[msg("Documents hash does not match the other side's")]
     DocumentsMismatch,
-    /// The vault account holds nothing to distribute.
-    #[msg("Nothing to settle")]
-    NothingToSettle,
     /// The refund goes to the wallet the record names, no other.
     #[msg("Not the wallet that fronted the rent")]
     WrongRentPayer,
@@ -238,9 +235,6 @@ pub enum MarketplaceError {
     /// The offer changed since the seller looked at it.
     #[msg("Offer nonce does not match")]
     OfferNonceMismatch,
-    /// Only the offer's maker may act on it.
-    #[msg("Caller did not make this offer")]
-    WrongOfferor,
     /// A seller has no business bidding on their own listing.
     #[msg("Cannot bid on own listing")]
     SelfOffer,

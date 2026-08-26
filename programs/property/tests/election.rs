@@ -362,6 +362,45 @@ fn window_bounds_votes_and_the_finalizer() {
     );
 }
 
+// The expiry second itself already belongs to the finalizer.
+#[test]
+fn the_expiry_second_belongs_to_the_finalizer() {
+    let (mut svm, admin, _authority) = setup_prop();
+    let agent = covering_agent(&mut svm, &admin);
+    ok(
+        &mut svm,
+        claim_property_ix(&agent.pubkey(), ASSET, 1),
+        &agent,
+        &[&agent],
+    );
+    let holder = new_holder(&mut svm, &admin, ASSET, 60);
+    vote(&mut svm, &holder, 1, &agent.pubkey(), 60);
+
+    let expiry = letting_of(&svm, ASSET).election.expiry;
+    warp_to(&mut svm, expiry);
+    fails_with(
+        &mut svm,
+        vote_agent_ix(&holder.pubkey(), ASSET, 1, &agent.pubkey(), None, 10),
+        &holder,
+        &[&holder, &sponsor()],
+        "VotingClosed",
+    );
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        finalize_election_ix(
+            &cranker.pubkey(),
+            ASSET,
+            1,
+            Some(&agent.pubkey()),
+            &[agent.pubkey()],
+        ),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(letting_of(&svm, ASSET).agent, agent.pubkey());
+}
+
 #[test]
 fn finalize_needs_the_whole_candidate_field() {
     let (mut svm, admin, _authority) = setup_prop();

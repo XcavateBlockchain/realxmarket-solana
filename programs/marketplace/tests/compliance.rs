@@ -61,6 +61,18 @@ fn lapsed_screening_is_rejected() {
     listing_fails(&mut svm, &developer, 1, "NotCompliant");
 }
 
+// The liveness check is strict, so the recorded second itself is already
+// lapsed.
+#[test]
+fn the_recorded_second_is_already_lapsed() {
+    let (mut svm, admin, developer) = listable();
+    let expires_at = now(&svm) + 1_000;
+    clear_compliance_until(&mut svm, &admin, &developer.pubkey(), expires_at);
+
+    warp(&mut svm, 1_000);
+    listing_fails(&mut svm, &developer, 0, "NotCompliant");
+}
+
 // Re-screening renews the same record rather than needing a new account.
 #[test]
 fn renewing_clears_the_wallet_again() {

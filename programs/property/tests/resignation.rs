@@ -162,6 +162,36 @@ fn finalize_waits_out_the_notice_period() {
     );
 }
 
+// The due second itself is the first one where the notice can settle.
+#[test]
+fn the_due_second_frees_the_agent() {
+    let (mut svm, _admin, agent) = setup_with_assigned_agent();
+    ok(
+        &mut svm,
+        resign_ix(&agent.pubkey(), ASSET),
+        &agent,
+        &[&agent],
+    );
+
+    let cranker = funded(&mut svm);
+    warp(&mut svm, NOTICE_PERIOD - 1);
+    fails_with(
+        &mut svm,
+        finalize_resignation_ix(&cranker.pubkey(), &agent.pubkey(), ASSET),
+        &cranker,
+        &[&cranker],
+        "NoticePeriodRunning",
+    );
+    warp(&mut svm, 1);
+    ok(
+        &mut svm,
+        finalize_resignation_ix(&cranker.pubkey(), &agent.pubkey(), ASSET),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(letting_of(&svm, ASSET).agent, Pubkey::default());
+}
+
 #[test]
 fn seat_reopens_for_a_fresh_election_after_resignation() {
     let (mut svm, admin, agent) = setup_with_assigned_agent();

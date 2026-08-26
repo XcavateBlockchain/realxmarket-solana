@@ -194,9 +194,10 @@ pub fn claim_open_region_handler(
     max_deposit: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    // The seat must be open: the operator's term has elapsed.
+    // The seat must be open: the operator's term has elapsed. The boundary
+    // second belongs to the open seat, mirroring the lame-duck checks.
     require!(
-        ctx.accounts.region.next_owner_change < now,
+        now >= ctx.accounts.region.next_owner_change,
         RegionsError::RegionOwnerCantBeChanged
     );
 

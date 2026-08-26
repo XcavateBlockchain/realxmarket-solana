@@ -1378,6 +1378,13 @@ pub fn warp(svm: &mut LiteSVM, secs: i64) {
     svm.set_sysvar(&clock);
 }
 
+/// Set the clock to an absolute timestamp, for exact-boundary tests.
+pub fn warp_to(svm: &mut LiteSVM, ts: i64) {
+    let mut clock = svm.get_sysvar::<Clock>();
+    clock.unix_timestamp = ts;
+    svm.set_sysvar(&clock);
+}
+
 // --- setup ---
 
 /// Reads a program binary from target/deploy at runtime rather than via

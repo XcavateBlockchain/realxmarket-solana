@@ -151,6 +151,32 @@ fn withdraw_expired_before_expiry_fails() {
     );
 }
 
+// Entries check `< expiry` and exits `>= expiry`, so the expiry second itself
+// already belongs to the exit and no instant is open to both or neither.
+#[test]
+fn the_expiry_second_belongs_to_the_exit() {
+    let (mut svm, admin, sponsor, _developer) = setup_listed();
+    let investor = new_investor(&mut svm, &admin);
+    buy(&mut svm, &admin, &investor, 10);
+
+    let expiry = listing_of(&svm, 0).listing_expiry;
+    warp_to(&mut svm, expiry);
+    let late = new_investor(&mut svm, &admin);
+    fails_with(
+        &mut svm,
+        reserve_ix(&late.pubkey(), &sponsor.pubkey(), 0, 1, u64::MAX),
+        &sponsor,
+        &[&sponsor, &late],
+        "ListingExpired",
+    );
+    ok(
+        &mut svm,
+        withdraw_expired_ix(&investor.pubkey(), 0),
+        &investor,
+        &[&investor],
+    );
+}
+
 #[test]
 fn withdraw_expired_after_sellout_fails() {
     let (mut svm, admin, _sponsor, _developer) = setup_listed();

@@ -149,6 +149,49 @@ fn claim_stops_at_the_window() {
     );
 }
 
+// At the deadline second claims are closed and the sweep is open; once every
+// reservation is swept, so is the direct market.
+#[test]
+fn the_deadline_second_opens_the_direct_market() {
+    let (mut svm, admin, sponsor) = setup_listed();
+    let investor = new_investor(&mut svm, &admin);
+    reserve(&mut svm, &investor, &sponsor, 10);
+    let fillers = fill_reserve(&mut svm, &admin);
+    attest_spv(&mut svm, &admin);
+
+    let deadline = listing_of(&svm, 0).claim_deadline;
+    warp_to(&mut svm, deadline);
+    fails_with(
+        &mut svm,
+        claim_ix(&investor.pubkey(), &sponsor.pubkey(), 0),
+        &sponsor,
+        &[&sponsor, &investor],
+        "ClaimWindowClosed",
+    );
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        release_reservation_ix(&cranker.pubkey(), 0, &investor.pubkey()),
+        &cranker,
+        &[&cranker],
+    );
+    for filler in &fillers {
+        ok(
+            &mut svm,
+            release_reservation_ix(&cranker.pubkey(), 0, &filler.pubkey()),
+            &cranker,
+            &[&cranker],
+        );
+    }
+    let other = new_investor(&mut svm, &admin);
+    ok(
+        &mut svm,
+        buy_ix(&other.pubkey(), &sponsor.pubkey(), 0, 5, u64::MAX),
+        &sponsor,
+        &[&sponsor, &other],
+    );
+}
+
 #[test]
 fn claims_can_sell_the_listing_out() {
     let (mut svm, admin, sponsor) = setup_listed();

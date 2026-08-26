@@ -1068,6 +1068,26 @@ fn cleared_rejects_an_expiry_in_the_past() {
     );
 }
 
+// The liveness check is strict, so a clearance expiring right now would be
+// dead on arrival.
+#[test]
+fn cleared_rejects_an_expiry_of_now() {
+    let (mut svm, _authority, admin) = setup_with_admin();
+    let user = funded(&mut svm).pubkey();
+    // Move off the epoch, where "now" is the no-expiry sentinel 0.
+    let mut clock = svm.get_sysvar::<anchor_lang::solana_program::clock::Clock>();
+    clock.unix_timestamp = 1_000;
+    svm.set_sysvar(&clock);
+
+    fails_with(
+        &mut svm,
+        set_compliance_ix(&admin.pubkey(), &user, ComplianceStatus::Cleared, 1_000),
+        &admin,
+        &[&admin],
+        "InvalidExpiry",
+    );
+}
+
 // Blocking does not lapse, so an expiry on it would be a contradiction.
 #[test]
 fn blocked_rejects_an_expiry() {

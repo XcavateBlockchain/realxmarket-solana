@@ -259,6 +259,64 @@ fn claim_open_region_fails_before_seat_open() {
     );
 }
 
+// The deadline second closes the claim and opens the clear-out.
+#[test]
+fn the_deadline_second_closes_the_claim() {
+    let (mut svm, operator, authority) = setup();
+    reach_passed(&mut svm, &operator, &authority);
+
+    let deadline = region_state_of(&svm, 1).claim_deadline;
+    warp_to(&mut svm, deadline);
+    fails_with(
+        &mut svm,
+        create_region_ix(&operator.pubkey(), 1),
+        &operator,
+        &[&operator],
+        "ClaimWindowClosed",
+    );
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        clear_ix(&cranker.pubkey(), 1, &operator.pubkey()),
+        &cranker,
+        &[&cranker],
+    );
+}
+
+// The term's last second still belongs to the incumbent; at the boundary the
+// lame-duck rule and the open seat flip at the same instant.
+#[test]
+fn the_term_boundary_opens_the_seat() {
+    let (mut svm, operator, authority) = setup();
+    reach_created(&mut svm, &operator, &authority);
+    let newop = new_operator(&mut svm, &authority);
+
+    let term_end = region_of(&svm, 1).next_owner_change;
+    warp_to(&mut svm, term_end - 1);
+    fails_with(
+        &mut svm,
+        claim_open_region_ix(&newop.pubkey(), 1, &operator.pubkey()),
+        &newop,
+        &[&newop],
+        "RegionOwnerCantBeChanged",
+    );
+    warp(&mut svm, 1);
+    fails_with(
+        &mut svm,
+        create_location_ix(&operator.pubkey(), 1, b"SW1A1AA"),
+        &operator,
+        &[&operator],
+        "SeatOpen",
+    );
+    ok(
+        &mut svm,
+        claim_open_region_ix(&newop.pubkey(), 1, &operator.pubkey()),
+        &newop,
+        &[&newop],
+    );
+    assert_eq!(region_of(&svm, 1).owner, newop.pubkey());
+}
+
 // ============================ resignation ============================
 
 #[test]

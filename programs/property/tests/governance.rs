@@ -394,6 +394,28 @@ fn finalize_waits_for_expiry() {
     );
 }
 
+// Votes run `< expiry` and the finalizer `>= expiry`: the boundary second
+// flips straight from voting to counting.
+#[test]
+fn the_expiry_second_belongs_to_the_finalizer() {
+    let (mut svm, admin, agent) = gov_setup();
+    propose(&mut svm, &agent, 1, MID_AMOUNT);
+    let voter = new_holder(&mut svm, &admin, ASSET, 60);
+    vote(&mut svm, &voter, 1, VoteChoice::Yes, 60);
+
+    let expiry = proposal_of(&svm, ASSET, 1).expiry;
+    warp_to(&mut svm, expiry);
+    fails_with(
+        &mut svm,
+        vote_proposal_ix(&voter.pubkey(), ASSET, 1, VoteChoice::Yes, 10),
+        &voter,
+        &[&voter, &sponsor()],
+        "VotingClosed",
+    );
+    finalize(&mut svm, &agent, 1);
+    assert!(account_gone(&svm, &proposal_pda(ASSET, 1)));
+}
+
 #[test]
 fn finalize_settles_after_the_agent_departs() {
     let (mut svm, admin, agent) = gov_setup();
@@ -657,6 +679,30 @@ fn challenge_vote_closes_at_expiry() {
         &[&voter, &sponsor()],
         "VotingClosed",
     );
+}
+
+// Same boundary rule for challenges: the expiry second belongs to the
+// finalizer, not the voters.
+#[test]
+fn the_challenge_expiry_second_belongs_to_the_finalizer() {
+    let (mut svm, admin, agent) = gov_setup();
+    let challenger = new_holder(&mut svm, &admin, ASSET, 10);
+    give_xcav(&mut svm, &challenger.pubkey(), FUND_XCAV);
+    challenge(&mut svm, &challenger, 1);
+    let voter = new_holder(&mut svm, &admin, ASSET, 50);
+    vote_challenge(&mut svm, &voter, 1, VoteChoice::Yes, 30);
+
+    let expiry = challenge_of(&svm, ASSET, 1).expiry;
+    warp_to(&mut svm, expiry);
+    fails_with(
+        &mut svm,
+        vote_challenge_ix(&voter.pubkey(), ASSET, 1, VoteChoice::Yes, 10),
+        &voter,
+        &[&voter, &sponsor()],
+        "VotingClosed",
+    );
+    finalize_challenge(&mut svm, &challenger, 1, Some(&agent.pubkey()));
+    assert!(account_gone(&svm, &challenge_pda(ASSET, 1)));
 }
 
 #[test]
