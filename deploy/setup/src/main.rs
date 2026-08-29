@@ -39,6 +39,9 @@ const REGION_ID: u16 = 1;
 const POSTCODES: [&[u8]; 2] = [b"SW1A1AA", b"M11AE"];
 const LISTING_DURATION: i64 = 30 * 86_400;
 const REGION_TAX_BPS: u16 = 300;
+// UK launch fees: 2% seller, 1% buyer.
+const REGION_SELLER_FEE_BPS: u16 = 200;
+const REGION_BUYER_FEE_BPS: u16 = 100;
 
 /// Devnet-friendly windows: long enough to click through, short enough to
 /// not stall a demo.
@@ -53,6 +56,7 @@ fn regions_params() -> regions::instructions::ConfigParams {
         min_vote_hold: 5,
         max_listing_duration: 180 * 86_400,
         max_tax_bps: 1_000,
+        max_fee_bps: 1_000,
         location_deposit: 50 * XCAV,
     }
 }
@@ -70,8 +74,9 @@ fn marketplace_params(
         lawyer_deposit: 100 * XCAV,
         min_property_shares: 2,
         max_property_shares: 100,
-        marketplace_fee_bps: 100,
-        investor_fee_bps: 100,
+        secondary_fee_bps: 100,
+        // Net primary-sale fees split 67/33 between operator and treasury.
+        operator_fee_share_bps: 6_700,
         // Full range so two test investors can buy a property out; tighten
         // via update_config when the frontend tests the cap.
         max_ownership_bps: 10_000,
@@ -610,6 +615,8 @@ fn main() {
                     region_id: REGION_ID,
                     listing_duration: LISTING_DURATION,
                     tax_bps: REGION_TAX_BPS,
+                    seller_fee_bps: REGION_SELLER_FEE_BPS,
+                    buyer_fee_bps: REGION_BUYER_FEE_BPS,
                 }
                 .data(),
                 regions::accounts::CreateRegion {

@@ -202,7 +202,7 @@ pub fn withdraw_legal_process_expired_handler(
 
 /// The exit from a sale the lawyers rejected. The rejection already set the
 /// status, so there is no deadline to prove. Unlike the expiry exits, the
-/// investor fee stays behind: the review that killed the sale still gets
+/// buyer fee stays behind: the review that killed the sale still gets
 /// paid from it, and `settle_cancelled_fees` distributes what is retained.
 pub fn withdraw_cancelled_handler(ctx: Context<WithdrawExpired>, listing_id: u64) -> Result<()> {
     require!(

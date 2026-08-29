@@ -57,7 +57,16 @@ fn init_requires_upgrade_authority() {
 fn init_rejects_fee_above_100_percent() {
     let (mut svm, authority) = pre_init();
     let mut params = default_params();
-    params.marketplace_fee_bps = 10_001;
+    params.secondary_fee_bps = 10_001;
+    fails_with(
+        &mut svm,
+        init_ix_with(&authority.pubkey(), params.clone()),
+        &authority,
+        &[&authority],
+        "InvalidConfig",
+    );
+    params.secondary_fee_bps = 100;
+    params.operator_fee_share_bps = 10_001;
     fails_with(
         &mut svm,
         init_ix_with(&authority.pubkey(), params),

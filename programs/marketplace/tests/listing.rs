@@ -38,8 +38,11 @@ fn list_property_creates_listing_and_locks_deposit() {
     assert_eq!(listing.share_price, SHARE_PRICE);
     assert_eq!(listing.listed_share_amount, SHARE_AMOUNT);
     assert_eq!(listing.sold_share_amount, 0);
-    // Snapshots from the seeded region: 300 bps tax, 100_000s duration.
+    // Snapshots from the seeded region: 300 bps tax, 100 bps fees each
+    // side, 100_000s duration.
     assert_eq!(listing.tax_bps, 300);
+    assert_eq!(listing.seller_fee_bps, 100);
+    assert_eq!(listing.buyer_fee_bps, 100);
     assert_eq!(listing.listing_expiry, now + LISTING_DURATION);
     assert_eq!(listing.deposit, LISTING_DEPOSIT);
     assert_eq!(listing.status, ListingStatus::PendingAssets);

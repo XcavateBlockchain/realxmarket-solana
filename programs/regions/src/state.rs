@@ -61,6 +61,8 @@ pub struct Config {
     pub max_listing_duration: i64,
     /// Highest property tax an operator may set, in basis points.
     pub max_tax_bps: u16,
+    /// Highest seller or buyer fee an operator may set, in basis points.
+    pub max_fee_bps: u16,
     /// XCAV an operator locks per registered location, on top of their bond.
     pub location_deposit: u64,
     /// Monotonic id for the next proposal.
@@ -87,6 +89,10 @@ pub struct Region {
     pub listing_duration: i64,
     /// Property sale tax for this region, in basis points.
     pub tax_bps: u16,
+    /// Fee on the developer's sale proceeds, in basis points.
+    pub seller_fee_bps: u16,
+    /// Fee a buyer pays on top of the share price, in basis points.
+    pub buyer_fee_bps: u16,
     /// Number of registered locations (each backed by a location deposit).
     pub location_count: u32,
     pub bump: u8,

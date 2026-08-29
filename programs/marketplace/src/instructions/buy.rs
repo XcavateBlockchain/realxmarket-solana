@@ -46,7 +46,7 @@ pub(crate) fn bps_of(value: u64, bps: u16) -> Result<u64> {
 }
 
 /// Price a purchase of `amount` shares off the listing snapshots, rescaled
-/// to the payment mint: the funds, the investor fee, and the tax.
+/// to the payment mint: the funds, the buyer fee, and the tax.
 pub(crate) fn price_purchase(
     listing: &Listing,
     amount: u32,
@@ -57,10 +57,7 @@ pub(crate) fn price_purchase(
         .checked_mul(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
     let funds = scale_to_mint(price_total, mint_decimals)?;
-    let fee = scale_to_mint(
-        bps_of(price_total, listing.investor_fee_bps)?,
-        mint_decimals,
-    )?;
+    let fee = scale_to_mint(bps_of(price_total, listing.buyer_fee_bps)?, mint_decimals)?;
     // The tax is always part of the price: it becomes the buyer's surcharge
     // or the developer's obligation, depending on who covers it.
     let tax = scale_to_mint(bps_of(price_total, listing.tax_bps)?, mint_decimals)?;

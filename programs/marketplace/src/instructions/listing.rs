@@ -15,9 +15,9 @@ use xcavate_whitelist::state::{Compliance, Role, RoleAccount};
 /// of the compliance-gated calls: the role must exist AND carry the compliant
 /// flag, since this starts a flow that takes investor funds. The location must
 /// be registered in the region, the developer locks the listing deposit, and
-/// the region's tax and listing duration are snapshotted. The listing starts
-/// as `PendingAssets`; `init_property_assets` creates the share mint and
-/// opens it for purchases.
+/// the region's tax, fees and listing duration are snapshotted. The listing
+/// starts as `PendingAssets`; `init_property_assets` creates the share mint
+/// and opens it for purchases.
 #[derive(Accounts)]
 #[instruction(region_id: u16, postcode: Vec<u8>)]
 pub struct ListProperty<'info> {
@@ -49,7 +49,7 @@ pub struct ListProperty<'info> {
     pub developer_compliance: Box<Account<'info, Compliance>>,
 
     /// The region the property sits in, owned by the regions program. Read for
-    /// the tax and listing-duration snapshot.
+    /// the tax, fee and listing-duration snapshot.
     #[account(
         seeds = [regions::REGION_SEED, &region_id.to_le_bytes()],
         bump = region.bump,
@@ -156,11 +156,12 @@ pub fn list_property_handler(
         .checked_add(ctx.accounts.region.listing_duration)
         .ok_or(MarketplaceError::Overflow)?;
     // A developer-covered tax comes out of the sale proceeds next to the
-    // marketplace fee; together they must fit inside the price, or the
+    // seller fee; together they must fit inside the price, or the
     // settlement subtraction could never pay the developer out.
     if tax_paid_by_developer {
         require!(
-            ctx.accounts.region.tax_bps as u32 + config.marketplace_fee_bps as u32 <= 10_000,
+            ctx.accounts.region.tax_bps as u32 + ctx.accounts.region.seller_fee_bps as u32
+                <= 10_000,
             MarketplaceError::TaxExceedsProceeds
         );
     }
@@ -196,8 +197,8 @@ pub fn list_property_handler(
     listing.reserved_share_amount = 0;
     listing.tax_paid_by_developer = tax_paid_by_developer;
     listing.tax_bps = ctx.accounts.region.tax_bps;
-    listing.marketplace_fee_bps = config.marketplace_fee_bps;
-    listing.investor_fee_bps = config.investor_fee_bps;
+    listing.seller_fee_bps = ctx.accounts.region.seller_fee_bps;
+    listing.buyer_fee_bps = ctx.accounts.region.buyer_fee_bps;
     listing.max_ownership_bps = config.max_ownership_bps;
     listing.listing_expiry = listing_expiry;
     listing.claiming_time = config.claiming_time;

@@ -1,5 +1,6 @@
 //! Locations and region settings: postcode registration with its deposit,
-//! listing-duration and tax setters, and how location deposits follow the seat.
+//! the listing-duration, tax and fee setters, and how location deposits
+//! follow the seat.
 
 mod common;
 use common::*;
@@ -163,6 +164,37 @@ fn adjust_tax_works_and_validates() {
 }
 
 #[test]
+fn adjust_fees_works_and_validates() {
+    let (mut svm, operator, authority) = setup();
+    created_region(&mut svm, &operator, &authority);
+    let region = region_of(&svm, 1);
+    assert_eq!(
+        (region.seller_fee_bps, region.buyer_fee_bps),
+        (SELLER_FEE_BPS, BUYER_FEE_BPS)
+    );
+
+    ok(
+        &mut svm,
+        adjust_fees_ix(&operator.pubkey(), 1, 500, 50),
+        &operator,
+        &[&operator],
+    );
+    let region = region_of(&svm, 1);
+    assert_eq!((region.seller_fee_bps, region.buyer_fee_bps), (500, 50));
+
+    // default max_fee_bps is 1_000, checked on each side
+    for (seller, buyer) in [(1_001, 50), (500, 1_001)] {
+        fails_with(
+            &mut svm,
+            adjust_fees_ix(&operator.pubkey(), 1, seller, buyer),
+            &operator,
+            &[&operator],
+            "FeeTooHigh",
+        );
+    }
+}
+
+#[test]
 fn adjust_setters_require_region_owner() {
     let (mut svm, operator, authority) = setup();
     created_region(&mut svm, &operator, &authority);
@@ -181,6 +213,13 @@ fn adjust_setters_require_region_owner() {
         &[&other],
         "NotRegionOwner",
     );
+    fails_with(
+        &mut svm,
+        adjust_fees_ix(&other.pubkey(), 1, 500, 50),
+        &other,
+        &[&other],
+        "NotRegionOwner",
+    );
 }
 
 #[test]
@@ -189,22 +228,72 @@ fn create_region_validates_initial_settings() {
     reach_passed(&mut svm, &operator, &authority);
     fails_with(
         &mut svm,
-        create_region_ix_with(&operator.pubkey(), 1, 0, TAX_BPS),
+        create_region_ix_with(
+            &operator.pubkey(),
+            1,
+            0,
+            TAX_BPS,
+            SELLER_FEE_BPS,
+            BUYER_FEE_BPS,
+        ),
         &operator,
         &[&operator],
         "InvalidListingDuration",
     );
     fails_with(
         &mut svm,
-        create_region_ix_with(&operator.pubkey(), 1, LISTING_DURATION, 1_001),
+        create_region_ix_with(
+            &operator.pubkey(),
+            1,
+            LISTING_DURATION,
+            1_001,
+            SELLER_FEE_BPS,
+            BUYER_FEE_BPS,
+        ),
         &operator,
         &[&operator],
         "TaxTooHigh",
     );
+    // Either fee above the configured maximum is rejected.
+    fails_with(
+        &mut svm,
+        create_region_ix_with(
+            &operator.pubkey(),
+            1,
+            LISTING_DURATION,
+            TAX_BPS,
+            1_001,
+            BUYER_FEE_BPS,
+        ),
+        &operator,
+        &[&operator],
+        "FeeTooHigh",
+    );
+    fails_with(
+        &mut svm,
+        create_region_ix_with(
+            &operator.pubkey(),
+            1,
+            LISTING_DURATION,
+            TAX_BPS,
+            SELLER_FEE_BPS,
+            1_001,
+        ),
+        &operator,
+        &[&operator],
+        "FeeTooHigh",
+    );
     // Valid settings still claim the passed region.
     ok(
         &mut svm,
-        create_region_ix_with(&operator.pubkey(), 1, LISTING_DURATION, TAX_BPS),
+        create_region_ix_with(
+            &operator.pubkey(),
+            1,
+            LISTING_DURATION,
+            TAX_BPS,
+            SELLER_FEE_BPS,
+            BUYER_FEE_BPS,
+        ),
         &operator,
         &[&operator],
     );

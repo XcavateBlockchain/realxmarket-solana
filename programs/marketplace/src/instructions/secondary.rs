@@ -257,7 +257,7 @@ pub fn relist_shares_handler(
     share_listing.seller = ctx.accounts.seller.key();
     share_listing.share_price = share_price;
     share_listing.amount = amount;
-    share_listing.fee_bps = config.marketplace_fee_bps;
+    share_listing.fee_bps = config.secondary_fee_bps;
     share_listing.rent_payer = ctx.accounts.payer.key();
     share_listing.bump = ctx.bumps.share_listing;
 

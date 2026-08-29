@@ -59,6 +59,8 @@ pub fn create_region_handler(
     region_id: u16,
     listing_duration: i64,
     tax_bps: u16,
+    seller_fee_bps: u16,
+    buyer_fee_bps: u16,
 ) -> Result<()> {
     require!(
         ctx.accounts.region_state.status == RegionStatus::Passed,
@@ -76,6 +78,11 @@ pub fn create_region_handler(
     require!(
         tax_bps <= ctx.accounts.config.max_tax_bps,
         RegionsError::TaxTooHigh
+    );
+    require!(
+        seller_fee_bps <= ctx.accounts.config.max_fee_bps
+            && buyer_fee_bps <= ctx.accounts.config.max_fee_bps,
+        RegionsError::FeeTooHigh
     );
 
     let now = Clock::get()?.unix_timestamp;
@@ -100,6 +107,8 @@ pub fn create_region_handler(
     region.next_owner_change = next_owner_change;
     region.listing_duration = listing_duration;
     region.tax_bps = tax_bps;
+    region.seller_fee_bps = seller_fee_bps;
+    region.buyer_fee_bps = buyer_fee_bps;
     region.location_count = 0;
     region.bump = ctx.bumps.region;
 
@@ -109,6 +118,8 @@ pub fn create_region_handler(
         collateral,
         listing_duration,
         tax_bps,
+        seller_fee_bps,
+        buyer_fee_bps,
     });
     Ok(())
 }
@@ -353,6 +364,8 @@ pub struct RegionCreated {
     pub collateral: u64,
     pub listing_duration: i64,
     pub tax_bps: u16,
+    pub seller_fee_bps: u16,
+    pub buyer_fee_bps: u16,
 }
 
 #[event]

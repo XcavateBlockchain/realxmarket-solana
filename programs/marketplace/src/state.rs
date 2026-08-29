@@ -41,10 +41,10 @@ pub struct Config {
     pub min_property_shares: u32,
     /// Most shares a property may be split into.
     pub max_property_shares: u32,
-    /// Protocol fee taken from the developer's proceeds, in basis points.
-    pub marketplace_fee_bps: u16,
-    /// Fee an investor pays on top of the share price, in basis points.
-    pub investor_fee_bps: u16,
+    /// Fee on secondary share sales, paid to the treasury, in basis points.
+    pub secondary_fee_bps: u16,
+    /// The operator's share of a primary sale's net fees, in basis points.
+    pub operator_fee_share_bps: u16,
     /// Largest slice of a property one investor may hold, in basis points.
     pub max_ownership_bps: u16,
     /// Seconds the claim window stays open once the SPV exists.
@@ -189,10 +189,10 @@ pub struct Listing {
     pub tax_paid_by_developer: bool,
     /// The region's sale tax at listing time, in basis points.
     pub tax_bps: u16,
-    /// Protocol fee at listing time, in basis points.
-    pub marketplace_fee_bps: u16,
-    /// Investor fee at listing time, in basis points.
-    pub investor_fee_bps: u16,
+    /// The region's seller fee at listing time, in basis points.
+    pub seller_fee_bps: u16,
+    /// The region's buyer fee at listing time, in basis points.
+    pub buyer_fee_bps: u16,
     /// Ownership cap at listing time, in basis points. Holdings must stay
     /// strictly below it, so even 10_000 requires at least two holders.
     pub max_ownership_bps: u16,
@@ -238,7 +238,7 @@ pub struct Listing {
     /// `close_case` clears the assignment before the fees settle.
     pub spv_costs_due: u64,
     pub spv_costs_payee: Pubkey,
-    /// Investor fees collected so far, at `PRICE_DECIMALS`; caps the SPV
+    /// Buyer fees collected so far, at `PRICE_DECIMALS`; caps the SPV
     /// lawyer's charge without trusting the current share price.
     pub collected_fee_quote: u64,
     /// What each payment mint collected across the sale, split the way
@@ -251,7 +251,7 @@ pub struct Listing {
 }
 
 impl Listing {
-    /// The investor fees a full sale collects, quoted at `PRICE_DECIMALS`.
+    /// The buyer fees a full sale collects, quoted at `PRICE_DECIMALS`.
     /// Lawyer costs are capped by this pot; the per-buy transfers floor when
     /// rescaling to each mint, so settlement pays out with the same floor.
     /// Add one payment's components to its mint's collected totals;
@@ -440,7 +440,7 @@ pub struct ShareListing {
     pub share_price: u64,
     /// Shares still for sale; partial buys draw it down.
     pub amount: u32,
-    /// Marketplace fee at the moment of listing, so a config change can't
+    /// Secondary fee at the moment of listing, so a config change can't
     /// reprice the seller's proceeds under them.
     pub fee_bps: u16,
     /// Stamped on each offer against this listing; the seller accepts by
@@ -497,13 +497,13 @@ pub struct InvestorPosition {
     pub paid_funds: u64,
     /// Paid as sale tax on top, in payment-mint base units.
     pub paid_tax: u64,
-    /// Paid as the investor fee on top, in payment-mint base units.
+    /// Paid as the buyer fee on top, in payment-mint base units.
     pub paid_fee: u64,
     /// Reserved toward the property price, still in the investor's wallet.
     pub reserved_funds: u64,
     /// Reserved for the sale tax, still in the investor's wallet.
     pub reserved_tax: u64,
-    /// Reserved for the investor fee, still in the investor's wallet.
+    /// Reserved for the buyer fee, still in the investor's wallet.
     pub reserved_fee: u64,
     /// Set when the investor unreserved. The position stays open as the
     /// one-way re-buy bar: `buy` rejects a cancelled position forever.

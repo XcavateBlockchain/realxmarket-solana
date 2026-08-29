@@ -481,7 +481,7 @@ pub fn confirm_documents_handler(
 /// Cancel a sale whose standing SPV verdict the developer's side is
 /// sitting out, so the SPV lawyer's pay never depends on the counterparty
 /// choosing to rule. One-directional on purpose: with the SPV side silent
-/// nobody's pay is at stake, and cancelling would keep investor fees the
+/// nobody's pay is at stake, and cancelling would keep buyer fees the
 /// timeout exit refunds, so that case just rides to the deadline.
 #[derive(Accounts)]
 #[instruction(listing_id: u64)]

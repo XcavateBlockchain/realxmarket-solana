@@ -320,6 +320,30 @@ pub fn adjust_region_tax_handler(
     Ok(())
 }
 
+/// Change the region's seller and buyer fees. Listings snapshot both at
+/// listing time, so a change never reprices a sale already underway.
+pub fn adjust_region_fees_handler(
+    ctx: Context<AdjustRegion>,
+    region_id: u16,
+    seller_fee_bps: u16,
+    buyer_fee_bps: u16,
+) -> Result<()> {
+    require!(
+        seller_fee_bps <= ctx.accounts.config.max_fee_bps
+            && buyer_fee_bps <= ctx.accounts.config.max_fee_bps,
+        RegionsError::FeeTooHigh
+    );
+    ctx.accounts.region.seller_fee_bps = seller_fee_bps;
+    ctx.accounts.region.buyer_fee_bps = buyer_fee_bps;
+
+    emit!(RegionFeesChanged {
+        region_id,
+        seller_fee_bps,
+        buyer_fee_bps,
+    });
+    Ok(())
+}
+
 #[event]
 pub struct LocationCreated {
     pub region_id: u16,
@@ -346,4 +370,11 @@ pub struct ListingDurationChanged {
 pub struct RegionTaxChanged {
     pub region_id: u16,
     pub tax_bps: u16,
+}
+
+#[event]
+pub struct RegionFeesChanged {
+    pub region_id: u16,
+    pub seller_fee_bps: u16,
+    pub buyer_fee_bps: u16,
 }

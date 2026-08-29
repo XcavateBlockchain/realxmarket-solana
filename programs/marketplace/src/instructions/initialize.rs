@@ -17,8 +17,8 @@ pub struct ConfigParams {
     pub lawyer_deposit: u64,
     pub min_property_shares: u32,
     pub max_property_shares: u32,
-    pub marketplace_fee_bps: u16,
-    pub investor_fee_bps: u16,
+    pub secondary_fee_bps: u16,
+    pub operator_fee_share_bps: u16,
     pub max_ownership_bps: u16,
     pub claiming_time: i64,
     pub legal_process_time: i64,
@@ -58,10 +58,10 @@ impl ConfigParams {
                 && self.max_property_shares <= MAX_SHARE_SUPPLY,
             MarketplaceError::InvalidConfig
         );
-        // The marketplace fee comes out of sale proceeds, so at 100% a
+        // The secondary fee comes out of sale proceeds, so at 100% a
         // secondary sale would pay the seller nothing.
         require!(
-            self.marketplace_fee_bps < 10_000 && self.investor_fee_bps <= 10_000,
+            self.secondary_fee_bps < 10_000 && self.operator_fee_share_bps <= 10_000,
             MarketplaceError::InvalidConfig
         );
         require!(
@@ -87,8 +87,8 @@ impl ConfigParams {
         config.lawyer_deposit = self.lawyer_deposit;
         config.min_property_shares = self.min_property_shares;
         config.max_property_shares = self.max_property_shares;
-        config.marketplace_fee_bps = self.marketplace_fee_bps;
-        config.investor_fee_bps = self.investor_fee_bps;
+        config.secondary_fee_bps = self.secondary_fee_bps;
+        config.operator_fee_share_bps = self.operator_fee_share_bps;
         config.max_ownership_bps = self.max_ownership_bps;
         config.claiming_time = self.claiming_time;
         config.legal_process_time = self.legal_process_time;
@@ -204,8 +204,8 @@ pub fn update_config_handler(ctx: Context<UpdateConfig>, params: ConfigParams) -
 
     emit!(ConfigUpdated {
         treasury: config.treasury,
-        marketplace_fee_bps: config.marketplace_fee_bps,
-        investor_fee_bps: config.investor_fee_bps,
+        secondary_fee_bps: config.secondary_fee_bps,
+        operator_fee_share_bps: config.operator_fee_share_bps,
     });
     Ok(())
 }
@@ -282,8 +282,8 @@ pub struct ConfigInitialized {
 #[event]
 pub struct ConfigUpdated {
     pub treasury: Pubkey,
-    pub marketplace_fee_bps: u16,
-    pub investor_fee_bps: u16,
+    pub secondary_fee_bps: u16,
+    pub operator_fee_share_bps: u16,
 }
 
 #[event]

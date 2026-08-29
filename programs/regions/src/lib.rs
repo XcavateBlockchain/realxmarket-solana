@@ -73,14 +73,23 @@ pub mod regions {
     }
 
     /// Claim a region whose proposal passed, creating it with its initial
-    /// listing duration and sale tax. Proposer-only.
+    /// listing duration, sale tax and fees. Proposer-only.
     pub fn create_region(
         ctx: Context<CreateRegion>,
         region_id: u16,
         listing_duration: i64,
         tax_bps: u16,
+        seller_fee_bps: u16,
+        buyer_fee_bps: u16,
     ) -> Result<()> {
-        create::create_region_handler(ctx, region_id, listing_duration, tax_bps)
+        create::create_region_handler(
+            ctx,
+            region_id,
+            listing_duration,
+            tax_bps,
+            seller_fee_bps,
+            buyer_fee_bps,
+        )
     }
 
     /// Claim an open region seat, bonding 0.1% of XCAV supply plus the region's
@@ -147,5 +156,15 @@ pub mod regions {
         tax_bps: u16,
     ) -> Result<()> {
         manage::adjust_region_tax_handler(ctx, region_id, tax_bps)
+    }
+
+    /// Change the region's seller and buyer fees. Region-operator-only.
+    pub fn adjust_region_fees(
+        ctx: Context<AdjustRegion>,
+        region_id: u16,
+        seller_fee_bps: u16,
+        buyer_fee_bps: u16,
+    ) -> Result<()> {
+        manage::adjust_region_fees_handler(ctx, region_id, seller_fee_bps, buyer_fee_bps)
     }
 }

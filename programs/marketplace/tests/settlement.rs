@@ -216,22 +216,22 @@ fn execute_deal_pays_everyone_and_finalizes() {
         &[&cranker],
     );
 
-    // tGBP side: 67 shares. funds 335e9, fee 3.35e9, tax 10.05e9,
-    // marketplace fee 1% = 3.35e9. The tax rides to the SPV lawyer, who also
+    // tGBP side: 67 shares. funds 335e9, buyer fee 3.35e9, tax 10.05e9,
+    // seller fee 1% = 3.35e9. The tax rides to the SPV lawyer, who also
     // draws their 1 GBP costs from the 6.7e9 pot; the developer's own lawyer
-    // is paid off chain, so the 5.7e9 left splits between region and
+    // is paid off chain, so the 5.7e9 left splits 67/33 between region and
     // treasury.
     assert_eq!(tgbp_balance(&svm, &developer.pubkey()), 331_650_000_000);
     assert_eq!(tgbp_balance(&svm, &dl.pubkey()), 0);
     assert_eq!(tgbp_balance(&svm, &sl.pubkey()), 10_050_000_000 + COSTS);
-    assert_eq!(tgbp_balance(&svm, &operator.pubkey()), 2_850_000_000);
-    // gbp6 side: 33 shares at 6 decimals. funds 165e6, fee+marketplace fee
+    assert_eq!(tgbp_balance(&svm, &operator.pubkey()), 3_819_000_000);
+    // gbp6 side: 33 shares at 6 decimals. funds 165e6, buyer+seller fee
     // 3.3e6, tax 4.95e6; the costs were already covered, so the whole pot
     // splits.
     assert_eq!(gbp6_balance(&svm, &developer.pubkey()), 163_350_000);
     assert_eq!(gbp6_balance(&svm, &dl.pubkey()), 0);
     assert_eq!(gbp6_balance(&svm, &sl.pubkey()), 4_950_000);
-    assert_eq!(gbp6_balance(&svm, &operator.pubkey()), 1_650_000);
+    assert_eq!(gbp6_balance(&svm, &operator.pubkey()), 2_211_000);
 
     // The vault drained to zero in both mints and the sale is final.
     for mint in [tgbp_mint(), gbp6_mint()] {

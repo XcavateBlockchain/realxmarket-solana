@@ -71,6 +71,9 @@ pub enum RegionsError {
     /// The tax is above the configured maximum.
     #[msg("Tax is above the maximum")]
     TaxTooHigh,
+    /// A seller or buyer fee is above the configured maximum.
+    #[msg("Fee is above the maximum")]
+    FeeTooHigh,
     /// The postcode is empty, too long, or not uppercase alphanumeric ASCII.
     #[msg("Invalid postcode")]
     InvalidPostcode,

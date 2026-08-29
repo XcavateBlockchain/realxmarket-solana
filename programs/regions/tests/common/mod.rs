@@ -45,6 +45,8 @@ pub const FUND_XCAV: u64 = 100_000_000_000;
 pub const LOCATION_DEPOSIT: u64 = 50_000_000;
 pub const LISTING_DURATION: i64 = 100_000;
 pub const TAX_BPS: u16 = 300;
+pub const SELLER_FEE_BPS: u16 = 200;
+pub const BUYER_FEE_BPS: u16 = 100;
 
 // --- ids / PDAs ---
 
@@ -342,6 +344,7 @@ pub fn default_params() -> ConfigParams {
         min_vote_hold: 100,
         max_listing_duration: 1_000_000,
         max_tax_bps: 1_000,
+        max_fee_bps: 1_000,
         location_deposit: LOCATION_DEPOSIT,
     }
 }
@@ -487,9 +490,16 @@ pub fn finalize_ix(
 }
 
 /// Claim a passed region (the proposer creates it) with the default listing
-/// duration and tax.
+/// duration, tax and fees.
 pub fn create_region_ix(creator: &Pubkey, region_id: u16) -> Instruction {
-    create_region_ix_with(creator, region_id, LISTING_DURATION, TAX_BPS)
+    create_region_ix_with(
+        creator,
+        region_id,
+        LISTING_DURATION,
+        TAX_BPS,
+        SELLER_FEE_BPS,
+        BUYER_FEE_BPS,
+    )
 }
 
 pub fn create_region_ix_with(
@@ -497,6 +507,8 @@ pub fn create_region_ix_with(
     region_id: u16,
     listing_duration: i64,
     tax_bps: u16,
+    seller_fee_bps: u16,
+    buyer_fee_bps: u16,
 ) -> Instruction {
     Instruction::new_with_bytes(
         rid(),
@@ -504,6 +516,8 @@ pub fn create_region_ix_with(
             region_id,
             listing_duration,
             tax_bps,
+            seller_fee_bps,
+            buyer_fee_bps,
         }
         .data(),
         regions::accounts::CreateRegion {
@@ -877,6 +891,24 @@ pub fn adjust_tax_ix(operator: &Pubkey, region_id: u16, tax_bps: u16) -> Instruc
     Instruction::new_with_bytes(
         rid(),
         &regions::instruction::AdjustRegionTax { region_id, tax_bps }.data(),
+        adjust_region_accounts(operator, region_id),
+    )
+}
+
+pub fn adjust_fees_ix(
+    operator: &Pubkey,
+    region_id: u16,
+    seller_fee_bps: u16,
+    buyer_fee_bps: u16,
+) -> Instruction {
+    Instruction::new_with_bytes(
+        rid(),
+        &regions::instruction::AdjustRegionFees {
+            region_id,
+            seller_fee_bps,
+            buyer_fee_bps,
+        }
+        .data(),
         adjust_region_accounts(operator, region_id),
     )
 }

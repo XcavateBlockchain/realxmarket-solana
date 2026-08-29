@@ -15,12 +15,13 @@ use crate::state::{Config, Lawyer, Listing, ListingStatus, PropertyAsset};
 use crate::vault::release_from_vault;
 
 /// Settle an approved sale: everyone is paid in one transaction, per
-/// collected mint. The developer takes the principal net of the marketplace
+/// collected mint. The developer takes the principal net of the seller
 /// fee (and of the tax, when they cover it); the tax rides to whichever
 /// lawyer remits it; the SPV lawyer draws their quoted costs from the fee
 /// pot, while the developer's own lawyer is paid privately off chain; what's
-/// left splits between the region's operator and the treasury, which also
-/// absorbs any rounding dust and donations, so the vault drains to zero.
+/// left splits between the region's operator and the treasury at the
+/// configured share, and the treasury also absorbs any rounding dust and
+/// donations, so the vault drains to zero.
 /// The deposit returns, both lawyers' case counts drop, and the sale is
 /// final. Permissionless: every amount is fixed by the accounts.
 ///
@@ -50,7 +51,7 @@ pub struct ExecuteDeal<'info> {
     pub property: Box<Account<'info, PropertyAsset>>,
 
     /// The property's region, owned by the regions program; its operator
-    /// takes half the leftover fees.
+    /// takes the configured share of the leftover fees.
     #[account(
         seeds = [regions::REGION_SEED, &property.region_id.to_le_bytes()],
         bump = region.bump,
@@ -193,14 +194,14 @@ pub fn execute_deal_handler<'info>(
         };
 
         // The split, all in this mint's units. The developer's share is the
-        // principal net of the marketplace fee, and net of the tax when they
+        // principal net of the seller fee, and net of the tax when they
         // cover it; the tax lands with the lawyer who handles it.
-        let marketplace_fee =
-            u64::try_from(entry.funds as u128 * listing.marketplace_fee_bps as u128 / 10_000)
+        let seller_fee =
+            u64::try_from(entry.funds as u128 * listing.seller_fee_bps as u128 / 10_000)
                 .map_err(|_| MarketplaceError::Overflow)?;
         let mut developer_amount = entry
             .funds
-            .checked_sub(marketplace_fee)
+            .checked_sub(seller_fee)
             .ok_or(MarketplaceError::Overflow)?;
         let (developer_lawyer_amount, mut spv_lawyer_amount) = if listing.tax_paid_by_developer {
             developer_amount = developer_amount
@@ -216,16 +217,19 @@ pub fn execute_deal_handler<'info>(
         // lawyer is paid privately.
         let mut pot = entry
             .fee
-            .checked_add(marketplace_fee)
+            .checked_add(seller_fee)
             .ok_or(MarketplaceError::Overflow)?;
         let cut = draw(&mut spv_lawyer_due, pot, decimals)?;
         spv_lawyer_amount = spv_lawyer_amount
             .checked_add(cut)
             .ok_or(MarketplaceError::Overflow)?;
         pot = pot.checked_sub(cut).ok_or(MarketplaceError::Overflow)?;
-        let region_amount = pot / 2;
+        let region_amount = u64::try_from(
+            pot as u128 * ctx.accounts.config.operator_fee_share_bps as u128 / 10_000,
+        )
+        .map_err(|_| MarketplaceError::Overflow)?;
 
-        // The treasury takes everything else in the vault: its half of the
+        // The treasury takes everything else in the vault: its share of the
         // leftover fees, the rounding dust, and any donations.
         let (_, _, vault_balance) = unpack_token(vault_account)?;
         let treasury_amount = vault_balance
