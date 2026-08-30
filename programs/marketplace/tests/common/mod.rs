@@ -255,6 +255,12 @@ pub fn sponsor() -> Keypair {
     Keypair::new_from_array([42u8; 32])
 }
 
+/// The operator who owns region 1 in the standard fixtures. Deterministic,
+/// so the secondary builders can name it as the fee payee.
+pub fn region_operator() -> Keypair {
+    Keypair::new_from_array([43u8; 32])
+}
+
 /// Deterministic XCAV token account for an owner. Not a real ATA; the program
 /// only checks the mint and authority, so any token account works.
 pub fn token_acc(owner: &Pubkey) -> Pubkey {
@@ -452,10 +458,11 @@ pub fn process_ixs(
     svm.send_transaction(tx)
 }
 
-/// The compute budget a client must request alongside `accept_offer`: PDA
-/// and ATA derivation costs vary with the account keys, so the 200k default
-/// leaves no safe margin for unlucky ones.
-pub const ACCEPT_OFFER_BUDGET: u32 = 300_000;
+/// The compute budget a client must request alongside the settle-heavy
+/// secondary trades (`accept_offer`, `buy_relisted_shares`): PDA and ATA
+/// derivation costs vary with the account keys, so the 200k default leaves
+/// no safe margin for unlucky ones.
+pub const SECONDARY_TRADE_BUDGET: u32 = 300_000;
 
 /// `SetComputeUnitLimit`, hand-encoded (discriminant 2 + units), so the
 /// tests carry no extra dependency for one fixed instruction.
@@ -471,8 +478,8 @@ pub fn set_compute_limit_ix(units: u32) -> Instruction {
     )
 }
 
-/// Send an instruction with the explicit `accept_offer` compute budget, the
-/// way a client sends it.
+/// Send an instruction with the explicit secondary-trade compute budget,
+/// the way a client sends it.
 pub fn process_with_budget(
     svm: &mut LiteSVM,
     ix: Instruction,
@@ -481,7 +488,7 @@ pub fn process_with_budget(
 ) -> Result<TransactionMetadata, FailedTransactionMetadata> {
     process_ixs(
         svm,
-        &[set_compute_limit_ix(ACCEPT_OFFER_BUDGET), ix],
+        &[set_compute_limit_ix(SECONDARY_TRADE_BUDGET), ix],
         payer,
         signers,
     )
@@ -642,7 +649,6 @@ pub fn default_params() -> ConfigParams {
         lawyer_deposit: LAWYER_DEPOSIT,
         min_property_shares: 1,
         max_property_shares: 100,
-        secondary_fee_bps: 100,
         operator_fee_share_bps: 6_700,
         max_ownership_bps: 5_000,
         claiming_time: CLAIMING_TIME,
@@ -2142,6 +2148,9 @@ pub fn relist_ix(seller: &Pubkey, asset_id: u64, id: u64, amount: u32, price: u6
             seller_role: role_pda(seller, Role::RealEstateInvestor),
             seller_compliance: compliance_pda(seller),
             listing: listing_pda(asset_id),
+            // Every fixture property sits in region 1.
+            property: property_pda(asset_id),
+            region: region_pda(1),
             holding: holding_pda(asset_id, seller),
             share_listing: share_listing_pda(id),
             system_program: SYS,
@@ -2222,6 +2231,9 @@ pub fn buy_relisted_ix_with_mint(
             seller_payment: payment_ata(seller, &payment_mint),
             treasury: treasury(),
             treasury_payment: payment_ata(&treasury(), &payment_mint),
+            region: region_pda(1),
+            region_owner: region_operator().pubkey(),
+            operator_payment: payment_ata(&region_operator().pubkey(), &payment_mint),
             share_mint: share_mint_pda(asset_id),
             mint_auth: mint_auth_pda(asset_id),
             seller_share_account: investor_share_ata(asset_id, seller),
@@ -2284,7 +2296,8 @@ pub fn finalized_property() -> (LiteSVM, Keypair, Vec<Keypair>) {
 /// Same flow; `finalize` false stops at `Legal`, holders already claimed.
 pub fn build_property(finalize: bool) -> (LiteSVM, Keypair, Vec<Keypair>) {
     let (mut svm, admin, _authority) = setup();
-    let operator = funded(&mut svm);
+    let operator = region_operator();
+    svm.airdrop(&operator.pubkey(), 100_000_000_000).unwrap();
     seed_region(&mut svm, 1, &operator.pubkey());
     seed_location(&mut svm, 1, POSTCODE);
     let developer = new_developer(&mut svm, &admin);
@@ -2523,6 +2536,9 @@ pub fn accept_offer_ix(
             seller_payment: payment_ata(seller, &payment_mint),
             treasury: treasury(),
             treasury_payment: payment_ata(&treasury(), &payment_mint),
+            region: region_pda(1),
+            region_owner: region_operator().pubkey(),
+            operator_payment: payment_ata(&region_operator().pubkey(), &payment_mint),
             share_mint: share_mint_pda(asset_id),
             mint_auth: mint_auth_pda(asset_id),
             seller_share_account: investor_share_ata(asset_id, seller),

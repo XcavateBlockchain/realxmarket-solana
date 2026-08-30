@@ -46,19 +46,20 @@ fn make_offer_holds_the_bid() {
     let offeror = new_investor(&mut svm, &admin);
     bid(&mut svm, &offeror, 10, BID);
 
-    // 10 shares at 5 GBP: 50 GBP left the bidder for the offer vault.
-    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 150_000_000_000);
+    // 10 shares at 5 GBP plus the 1% buyer fee: 50.5 GBP left the bidder
+    // for the offer vault.
+    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 149_500_000_000);
     assert_eq!(
         token_balance(
             &svm,
             &payment_ata(&offer_vault_pda(0, &offeror.pubkey()), &tgbp_mint())
         ),
-        50_000_000_000
+        50_500_000_000
     );
     let offer = offer_of(&svm, 0, &offeror.pubkey());
     assert_eq!(offer.amount, 10);
     assert_eq!(offer.share_price, BID);
-    assert_eq!(offer.held, 50_000_000_000);
+    assert_eq!(offer.held, 50_500_000_000);
     assert_eq!(offer.nonce, 0);
     assert_eq!(share_listing_of(&svm, 0).next_offer_nonce, 1);
 
@@ -132,7 +133,7 @@ fn make_offer_validates_the_bid() {
 // Accepting settles both sides in one instruction, so it is the heaviest
 // path in the program, and its PDA and ATA derivation costs vary with the
 // account keys — unlucky ones ran the 200k default out. Clients therefore
-// send an explicit budget (ACCEPT_OFFER_BUDGET, like every test here); the
+// send an explicit budget (SECONDARY_TRADE_BUDGET, like every test here); the
 // pin sits above the observed wobble but well under that budget, so a
 // structural regression still fails loudly.
 const COMPUTE_BUDGET: u64 = 250_000;
@@ -173,17 +174,25 @@ fn accept_pays_from_the_vault_and_moves_shares() {
         &[seller],
     );
 
-    // 50 GBP held: 1% fee to the treasury, the rest to the seller. The
-    // bidder pays nothing beyond what the vault already held.
+    // 50.5 GBP held: the seller nets the bid minus their 1% fee, and the
+    // 1 GBP of combined fees splits 67/33 between the region's operator and
+    // the treasury. The bidder pays nothing beyond what the vault held.
     assert_eq!(
         token_balance(&svm, &payment_ata(&seller.pubkey(), &tgbp_mint())),
         49_500_000_000
     );
     assert_eq!(
-        token_balance(&svm, &treasury_payment_ata()) - treasury_before,
-        500_000_000
+        token_balance(
+            &svm,
+            &payment_ata(&region_operator().pubkey(), &tgbp_mint())
+        ),
+        670_000_000
     );
-    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 150_000_000_000);
+    assert_eq!(
+        token_balance(&svm, &treasury_payment_ata()) - treasury_before,
+        330_000_000
+    );
+    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 149_500_000_000);
 
     // Shares and reservations move like a buy; offer and vault are gone.
     assert_eq!(holding_of(&svm, 0, &seller.pubkey()).amount, 23);
@@ -236,6 +245,20 @@ fn accept_binds_to_the_offer_nonce() {
     );
 }
 
+// Accept validates the fee payee the same way the direct buy does.
+#[test]
+fn accept_pins_the_region_owner() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let intruder = funded(&mut svm);
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    swap_account(&mut ix, region_operator().pubkey(), intruder.pubkey());
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongPayee");
+}
+
 #[test]
 fn accept_requires_the_seller() {
     let (mut svm, admin, investors) = listed_property();
@@ -261,7 +284,7 @@ fn accept_fails_when_the_listing_shrank_below_the_offer() {
     // A direct buy takes most of the listing first.
     let buyer = new_investor(&mut svm, &admin);
     give_tgbp(&mut svm, &buyer.pubkey(), 200_000_000_000);
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 10, u64::MAX),
         &buyer,
@@ -281,7 +304,7 @@ fn accept_fails_when_the_listing_shrank_below_the_offer() {
         &offeror,
         &[&offeror],
     );
-    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 125_000_000_000);
+    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 124_250_000_000);
 }
 
 #[test]
@@ -355,7 +378,7 @@ fn accept_requires_a_still_compliant_bidder() {
     );
     assert_eq!(
         token_balance(&svm, &payment_ata(&offeror.pubkey(), &tgbp_mint())),
-        50_000_000_000
+        50_500_000_000
     );
 }
 
@@ -406,7 +429,7 @@ fn reject_refunds_the_bidder() {
     // The refund lands at the bidder's ATA; nothing was sold.
     assert_eq!(
         token_balance(&svm, &payment_ata(&offeror.pubkey(), &tgbp_mint())),
-        50_000_000_000
+        50_500_000_000
     );
     assert!(svm.get_account(&offer_pda(0, &offeror.pubkey())).is_none());
     assert_eq!(share_listing_of(&svm, 0).amount, 20);
@@ -422,7 +445,7 @@ fn cancel_survives_the_listing_dying() {
     // The whole listing sells to someone else and closes.
     let buyer = new_investor(&mut svm, &admin);
     give_tgbp(&mut svm, &buyer.pubkey(), 200_000_000_000);
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 20, u64::MAX),
         &buyer,
@@ -437,10 +460,10 @@ fn cancel_survives_the_listing_dying() {
         &offeror,
         &[&offeror],
     );
-    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 150_000_000_000);
+    assert_eq!(tgbp_balance(&svm, &offeror.pubkey()), 149_500_000_000);
     assert_eq!(
         token_balance(&svm, &payment_ata(&offeror.pubkey(), &tgbp_mint())),
-        50_000_000_000
+        50_500_000_000
     );
     assert!(svm.get_account(&offer_pda(0, &offeror.pubkey())).is_none());
 }
@@ -461,7 +484,7 @@ fn dusted_vault_cannot_wedge_the_offer() {
         tgbp_mint(),
         vault_ata,
         &offer_vault_pda(0, &offeror.pubkey()),
-        50_000_000_001,
+        50_500_000_001,
     );
     ok_with_budget(
         &mut svm,
@@ -491,7 +514,7 @@ fn dusted_vault_still_refunds_in_full() {
         tgbp_mint(),
         vault_ata,
         &offer_vault_pda(0, &offeror.pubkey()),
-        50_000_000_001,
+        50_500_000_001,
     );
     ok(
         &mut svm,
@@ -501,7 +524,7 @@ fn dusted_vault_still_refunds_in_full() {
     );
     assert_eq!(
         token_balance(&svm, &payment_ata(&offeror.pubkey(), &tgbp_mint())),
-        50_000_000_001
+        50_500_000_001
     );
 }
 

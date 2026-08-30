@@ -208,7 +208,7 @@ proptest! {
                         amount.min(listing.amount),
                         u64::MAX,
                     );
-                    let _ = process(&mut svm, ix, actor, &[actor]);
+                    let _ = process_with_budget(&mut svm, ix, actor, &[actor]);
                 }
                 3 => {
                     let ids = live_listings(&svm);

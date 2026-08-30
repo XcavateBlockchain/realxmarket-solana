@@ -15,8 +15,7 @@ use anchor_spl::token_interface::{
 
 use crate::constants::{
     CONFIG_SEED, CPI_AUTH_SEED, INCOME_SEED, LISTING_SEED, MINT_AUTH_SEED, OFFER_SEED,
-    OFFER_VAULT_SEED, PROPERTY_PROGRAM, PROPERTY_SEED, SHARE_LISTING_SEED, SHARE_MINT_SEED,
-    SHARE_SEED,
+    OFFER_VAULT_SEED, PROPERTY_PROGRAM, PROPERTY_SEED, SHARE_LISTING_SEED, SHARE_SEED,
 };
 use crate::error::MarketplaceError;
 use crate::instructions::buy::{bps_of, scale_to_mint};
@@ -209,7 +208,15 @@ pub fn make_offer_handler(
             .base
             .decimals
     };
-    let held = scale_to_mint(total_quote, mint_decimals)?;
+    // The escrow covers the bid plus the buyer fee snapshotted on the
+    // listing, so acceptance can pay everyone from the vault alone.
+    let buyer_fee = scale_to_mint(
+        bps_of(total_quote, share_listing.buyer_fee_bps)?,
+        mint_decimals,
+    )?;
+    let held = scale_to_mint(total_quote, mint_decimals)?
+        .checked_add(buyer_fee)
+        .ok_or(MarketplaceError::Overflow)?;
 
     let nonce = share_listing.next_offer_nonce;
     share_listing.next_offer_nonce = nonce.checked_add(1).ok_or(MarketplaceError::Overflow)?;
@@ -266,8 +273,9 @@ pub fn make_offer_handler(
 
 /// The seller takes an offer, named by nonce so a swapped bid can't ride
 /// their signature. Settles exactly like a buy at the offered price: income
-/// checkpointed both sides, fee to the treasury, remainder to the seller,
-/// all paid from the offer's vault, and the shares move over the airlock.
+/// checkpointed both sides, the net fees split between the region's
+/// operator and the treasury, remainder to the seller, all paid from the
+/// offer's vault, and the shares move over the airlock.
 #[derive(Accounts)]
 #[instruction(id: u64)]
 pub struct AcceptOffer<'info> {
@@ -381,8 +389,21 @@ pub struct AcceptOffer<'info> {
     #[account(mut)]
     pub treasury_payment: UncheckedAccount<'info>,
 
-    /// CHECK: the share mint PDA (owned by the Token-2022 program).
-    #[account(seeds = [SHARE_MINT_SEED, &share_listing.asset_id.to_le_bytes()], bump)]
+    /// CHECK: the property's region; the handler proves the regions program
+    /// owns it, matches its id, and reads the current owner.
+    pub region: UncheckedAccount<'info>,
+
+    /// CHECK: the region's current owner; the handler checks it against the
+    /// region record. Authority of the ATA below.
+    pub region_owner: UncheckedAccount<'info>,
+
+    /// CHECK: the region owner's associated account for the paid mint;
+    /// created idempotently.
+    #[account(mut)]
+    pub operator_payment: UncheckedAccount<'info>,
+
+    /// CHECK: the share mint; the handler checks it against the property's
+    /// stored mint key (out of `try_accounts` for stack room).
     pub share_mint: UncheckedAccount<'info>,
 
     /// CHECK: the share mint's authority PDA; permanent delegate, signs the
@@ -401,8 +422,7 @@ pub struct AcceptOffer<'info> {
     pub offeror_share_account: UncheckedAccount<'info>,
 
     /// CHECK: this program's CPI signer PDA; holds no data, only signs the
-    /// income settlements.
-    #[account(seeds = [CPI_AUTH_SEED], bump)]
+    /// income settlements. Derived in the handler (stack room).
     pub cpi_auth: UncheckedAccount<'info>,
 
     /// CHECK: the property's income ledger; the handler pins it to its
@@ -506,13 +526,33 @@ pub fn accept_offer_handler<'info>(
         MarketplaceError::PropertyNotFinalized
     );
     let mut property: Account<PropertyAsset> = Account::try_from(&ctx.accounts.property)?;
+    require!(
+        ctx.accounts.share_mint.key() == property.share_mint,
+        MarketplaceError::WrongVaultAccount
+    );
     let owned_after = (ctx.accounts.offeror_holding.amount as u64)
         .checked_add(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
     primary.require_below_ownership_cap(owned_after, property.share_amount)?;
 
-    // The fee comes out of the offered total, at the rate snapshotted on
-    // the listing.
+    // The fee split pays the region's current owner, read live like the
+    // primary settlement does. `try_from` proves the regions program owns
+    // the record; region ids are unique, so the id match pins the account
+    // without a derivation.
+    let region: Account<regions::state::Region> = Account::try_from(&ctx.accounts.region)?;
+    require!(
+        region.region_id == property.region_id,
+        MarketplaceError::WrongVaultAccount
+    );
+    require!(
+        ctx.accounts.region_owner.key() == region.owner,
+        MarketplaceError::WrongPayee
+    );
+
+    // The fees at the rates snapshotted on the listing: the buyer fee rode
+    // into the escrow at make time, the seller fee comes out of the offered
+    // total. The net fees split between operator and treasury at the
+    // config's live share; rounding dust stays with the treasury.
     let total_quote = offer
         .share_price
         .checked_mul(amount as u64)
@@ -523,10 +563,22 @@ pub fn accept_offer_handler<'info>(
             .base
             .decimals
     };
-    let fee = scale_to_mint(
-        bps_of(total_quote, ctx.accounts.share_listing.fee_bps)?,
+    let buyer_fee = scale_to_mint(
+        bps_of(total_quote, ctx.accounts.share_listing.buyer_fee_bps)?,
         mint_decimals,
     )?;
+    let seller_fee = scale_to_mint(
+        bps_of(total_quote, ctx.accounts.share_listing.seller_fee_bps)?,
+        mint_decimals,
+    )?;
+    let fees = buyer_fee
+        .checked_add(seller_fee)
+        .ok_or(MarketplaceError::Overflow)?;
+    let operator_fee = u64::try_from(fees as u128 * config.operator_fee_share_bps as u128 / 10_000)
+        .map_err(|_| MarketplaceError::Overflow)?;
+    let treasury_fee = fees
+        .checked_sub(operator_fee)
+        .ok_or(MarketplaceError::Overflow)?;
 
     let seller_key = ctx.accounts.seller.key();
     let offeror_key = ctx.accounts.offeror.key();
@@ -551,8 +603,16 @@ pub fn accept_offer_handler<'info>(
     }
 
     // Both parties settle their accrued income at pre-trade balances; see
-    // `buy_relisted_shares` for the skip rule.
+    // `buy_relisted_shares` for the skip rule. The signer PDA is derived
+    // here rather than in `try_accounts` (stack room), and only the real
+    // one can sign the CPI.
     if !ctx.accounts.income.data_is_empty() {
+        let (cpi_auth_key, cpi_auth_bump) =
+            Pubkey::find_program_address(&[CPI_AUTH_SEED], &crate::ID);
+        require!(
+            ctx.accounts.cpi_auth.key() == cpi_auth_key,
+            MarketplaceError::WrongVaultAccount
+        );
         settle_income(
             &ctx.accounts.property_program.to_account_info(),
             &ctx.accounts.cpi_auth.to_account_info(),
@@ -561,7 +621,7 @@ pub fn accept_offer_handler<'info>(
             &ctx.accounts.seller_holding.to_account_info(),
             &ctx.accounts.seller_checkpoint.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.cpi_auth,
+            cpi_auth_bump,
             asset_id,
             seller_key,
         )?;
@@ -573,32 +633,39 @@ pub fn accept_offer_handler<'info>(
             &ctx.accounts.offeror_holding.to_account_info(),
             &ctx.accounts.offeror_checkpoint.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.cpi_auth,
+            cpi_auth_bump,
             asset_id,
             offeror_key,
         )?;
     }
 
-    // The seller and the treasury are paid from the offer vault, which then
-    // closes; its rent rides back with the offer's.
-    create_idempotent(CpiContext::new(
-        ctx.accounts.associated_token_program.key(),
-        CreateAta {
-            payer: ctx.accounts.payer.to_account_info(),
-            associated_token: ctx.accounts.seller_payment.to_account_info(),
-            authority: ctx.accounts.seller.to_account_info(),
-            mint: ctx.accounts.payment_mint.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            token_program: ctx.accounts.payment_token_program.to_account_info(),
-        },
-    ))?;
-    if fee > 0 {
+    // Every payee draws from the offer vault, which then closes; its rent
+    // rides back with the offer's. ATAs are created if needed, so a closed
+    // account can't block the acceptance. The seller's always: the sweep
+    // pays them whatever the fixed fees leave behind.
+    let mut ata_targets = vec![(
+        ctx.accounts.seller.to_account_info(),
+        ctx.accounts.seller_payment.to_account_info(),
+    )];
+    if operator_fee > 0 {
+        ata_targets.push((
+            ctx.accounts.region_owner.to_account_info(),
+            ctx.accounts.operator_payment.to_account_info(),
+        ));
+    }
+    if treasury_fee > 0 {
+        ata_targets.push((
+            ctx.accounts.treasury.to_account_info(),
+            ctx.accounts.treasury_payment.to_account_info(),
+        ));
+    }
+    for (authority, payment_account) in ata_targets {
         create_idempotent(CpiContext::new(
             ctx.accounts.associated_token_program.key(),
             CreateAta {
                 payer: ctx.accounts.payer.to_account_info(),
-                associated_token: ctx.accounts.treasury_payment.to_account_info(),
-                authority: ctx.accounts.treasury.to_account_info(),
+                associated_token: payment_account,
+                authority,
                 mint: ctx.accounts.payment_mint.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 token_program: ctx.accounts.payment_token_program.to_account_info(),
@@ -619,7 +686,16 @@ pub fn accept_offer_handler<'info>(
         &ctx.accounts.vault_payment_account.to_account_info(),
         &ctx.accounts.offer_rent_payer.to_account_info(),
         vault_seeds,
-        &[(&ctx.accounts.treasury_payment.to_account_info(), fee)],
+        &[
+            (
+                &ctx.accounts.operator_payment.to_account_info(),
+                operator_fee,
+            ),
+            (
+                &ctx.accounts.treasury_payment.to_account_info(),
+                treasury_fee,
+            ),
+        ],
         &ctx.accounts.seller_payment.to_account_info(),
         mint_decimals,
     )?;
@@ -676,9 +752,10 @@ pub fn accept_offer_handler<'info>(
         seller: seller_key,
         amount,
         paid: seller_part
-            .checked_add(fee)
+            .checked_add(fees)
             .ok_or(MarketplaceError::Overflow)?,
-        fee,
+        fees,
+        operator_fee,
         remaining,
     });
     Ok(())
@@ -927,10 +1004,12 @@ pub struct OfferAccepted {
     pub offeror: Pubkey,
     pub seller: Pubkey,
     pub amount: u32,
-    /// What the bidder's vault paid out in the mint's units, and the slice
-    /// that went to the treasury.
+    /// What the bidder's vault paid out in the mint's units.
     pub paid: u64,
-    pub fee: u64,
+    /// Combined seller and buyer fees; the operator's slice of them is
+    /// broken out, the treasury took the rest.
+    pub fees: u64,
+    pub operator_fee: u64,
     pub remaining: u32,
 }
 

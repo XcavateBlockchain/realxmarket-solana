@@ -37,10 +37,10 @@ fn instructions_fit_in_one_packet() {
 }
 
 // The two settlement paths carry both sides' accounts and are v0-only: the
-// client sends them with an address lookup table. buy_relisted_shares
-// happens to sit two bytes under the legacy limit today, but that headroom
-// is not contract; any added account spends it. Pinned so growth is a
-// deliberate decision about what the table has to absorb.
+// client sends them with an address lookup table. Both sit above the legacy
+// limit since the fee split added the region, its owner, and the operator's
+// payout account. Pinned so growth is a deliberate decision about what the
+// table has to absorb.
 #[test]
 fn settlement_paths_need_a_lookup_table() {
     let a = Pubkey::new_unique();
@@ -49,12 +49,12 @@ fn settlement_paths_need_a_lookup_table() {
         (
             "accept_offer",
             tx_size(accept_offer_ix(&b, 0, 0, &a, 0, tgbp_mint()), 2),
-            1350,
+            1420,
         ),
         (
             "buy_relisted_shares",
             tx_size(buy_relisted_ix(&a, 0, 0, &b, 5, u64::MAX), 2),
-            1230,
+            1300,
         ),
     ] {
         assert!(

@@ -195,6 +195,22 @@ pub struct RelistShares<'info> {
     )]
     pub listing: Box<Account<'info, Listing>>,
 
+    /// The property; names the region whose fees get snapshotted.
+    #[account(
+        seeds = [PROPERTY_SEED, &asset_id.to_le_bytes()],
+        bump = property.bump,
+    )]
+    pub property: Box<Account<'info, PropertyAsset>>,
+
+    /// The property's region, owned by the regions program. Read for the
+    /// fee snapshot, same as the primary listing.
+    #[account(
+        seeds = [regions::REGION_SEED, &property.region_id.to_le_bytes()],
+        bump = region.bump,
+        seeds::program = regions::ID,
+    )]
+    pub region: Box<Account<'info, regions::state::Region>>,
+
     #[account(
         mut,
         seeds = [SHARE_SEED, &asset_id.to_le_bytes(), seller.key().as_ref()],
@@ -257,7 +273,8 @@ pub fn relist_shares_handler(
     share_listing.seller = ctx.accounts.seller.key();
     share_listing.share_price = share_price;
     share_listing.amount = amount;
-    share_listing.fee_bps = config.secondary_fee_bps;
+    share_listing.seller_fee_bps = ctx.accounts.region.seller_fee_bps;
+    share_listing.buyer_fee_bps = ctx.accounts.region.buyer_fee_bps;
     share_listing.rent_payer = ctx.accounts.payer.key();
     share_listing.bump = ctx.bumps.share_listing;
 
@@ -319,10 +336,11 @@ pub fn delist_shares_handler(ctx: Context<DelistShares>) -> Result<()> {
 }
 
 /// Buy from a secondary listing. Both parties' income settles at their
-/// pre-trade balances first, then the buyer pays the seller (minus the fee
-/// snapshotted on the listing, which goes to the treasury) and the shares
-/// move ledger and token side. A partial buy leaves the listing open for
-/// the rest.
+/// pre-trade balances first, then the buyer pays the price plus the buyer
+/// fee: the price minus the seller fee goes to the seller (both rates
+/// snapshotted on the listing), the net fees split between the region's
+/// operator and the treasury, and the shares move ledger and token side.
+/// A partial buy leaves the listing open for the rest.
 #[derive(Accounts)]
 #[instruction(asset_id: u64, id: u64)]
 pub struct BuyRelistedShares<'info> {
@@ -354,9 +372,8 @@ pub struct BuyRelistedShares<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the primary listing (status gate and the ownership-cap
-    /// snapshot), seeds-pinned here and deserialized in the handler to keep
-    /// its bulk off the `try_accounts` stack.
-    #[account(seeds = [LISTING_SEED, &asset_id.to_le_bytes()], bump)]
+    /// snapshot); the handler deserializes it and matches its stored asset
+    /// id, all out of `try_accounts` for stack room.
     pub listing: UncheckedAccount<'info>,
 
     #[account(
@@ -424,13 +441,27 @@ pub struct BuyRelistedShares<'info> {
     #[account(mut)]
     pub treasury_payment: UncheckedAccount<'info>,
 
-    /// CHECK: the share mint PDA (owned by the Token-2022 program).
-    #[account(seeds = [SHARE_MINT_SEED, &asset_id.to_le_bytes()], bump)]
+    /// CHECK: the property's region; the handler proves the regions program
+    /// owns it, matches its id, and reads the current owner.
+    pub region: UncheckedAccount<'info>,
+
+    /// CHECK: the region's current owner; the handler checks it against the
+    /// region record. Authority of the ATA below.
+    pub region_owner: UncheckedAccount<'info>,
+
+    /// CHECK: the region owner's associated account for the paid mint;
+    /// created idempotently.
+    #[account(mut)]
+    pub operator_payment: UncheckedAccount<'info>,
+
+    /// CHECK: the share mint, pinned to the property's stored mint key (out
+    /// of `try_accounts` for stack room).
+    #[account(address = property.share_mint @ MarketplaceError::WrongVaultAccount)]
     pub share_mint: UncheckedAccount<'info>,
 
     /// CHECK: the share mint's authority PDA; permanent delegate, signs the
-    /// transfer and the lock-state changes.
-    #[account(seeds = [MINT_AUTH_SEED, &asset_id.to_le_bytes()], bump)]
+    /// transfer and the lock-state changes. Derived in the handler (stack
+    /// room).
     pub mint_auth: UncheckedAccount<'info>,
 
     /// CHECK: the seller's share account; the handler pins it to its
@@ -444,8 +475,7 @@ pub struct BuyRelistedShares<'info> {
     pub buyer_share_account: UncheckedAccount<'info>,
 
     /// CHECK: this program's CPI signer PDA; holds no data, only signs the
-    /// income settlements.
-    #[account(seeds = [CPI_AUTH_SEED], bump)]
+    /// income settlements. Derived in the handler (stack room).
     pub cpi_auth: UncheckedAccount<'info>,
 
     /// CHECK: the property's income ledger; the handler pins it to its
@@ -485,7 +515,13 @@ pub fn buy_relisted_shares_handler<'info>(
     max_total_cost: u64,
 ) -> Result<()> {
     require_compliant(&ctx.accounts.buyer_compliance, &ctx.accounts.buyer.key())?;
+    // `try_from` proves this program owns the record; one listing ever
+    // exists per asset, so the id match pins it without a derivation.
     let primary: Account<Listing> = Account::try_from(&ctx.accounts.listing)?;
+    require!(
+        primary.asset_id == asset_id,
+        MarketplaceError::LedgerMismatch
+    );
     require!(
         primary.status == ListingStatus::Finalized,
         MarketplaceError::PropertyNotFinalized
@@ -523,6 +559,25 @@ pub fn buy_relisted_shares_handler<'info>(
             .0,
         MarketplaceError::WrongVaultAccount
     );
+    let (mint_auth_key, mint_auth_bump) =
+        Pubkey::find_program_address(&[MINT_AUTH_SEED, &asset_id.to_le_bytes()], &crate::ID);
+    require!(
+        ctx.accounts.mint_auth.key() == mint_auth_key,
+        MarketplaceError::WrongVaultAccount
+    );
+    // The fee split pays the region's current owner, read live like the
+    // primary settlement does. `try_from` proves the regions program owns
+    // the record; region ids are unique, so the id match pins the account
+    // without a derivation.
+    let region: Account<regions::state::Region> = Account::try_from(&ctx.accounts.region)?;
+    require!(
+        region.region_id == ctx.accounts.property.region_id,
+        MarketplaceError::WrongVaultAccount
+    );
+    require!(
+        ctx.accounts.region_owner.key() == region.owner,
+        MarketplaceError::WrongPayee
+    );
 
     // Ownership cap, against the snapshot taken at listing time; same rule
     // as the primary sale.
@@ -531,9 +586,10 @@ pub fn buy_relisted_shares_handler<'info>(
         .ok_or(MarketplaceError::Overflow)?;
     primary.require_below_ownership_cap(owned_after, ctx.accounts.property.share_amount)?;
 
-    // Price off the listing snapshots, rescaled to the paid mint. The
-    // caller caps the total, so nothing can charge more than they signed
-    // for. The fee comes out of the seller's proceeds.
+    // Price off the listing snapshots, rescaled to the paid mint. The buyer
+    // pays the price plus the buyer fee, the seller fee comes out of the
+    // proceeds. The caller caps the full outlay, so nothing can charge more
+    // than they signed for.
     let total_quote = share_listing
         .share_price
         .checked_mul(amount as u64)
@@ -545,9 +601,24 @@ pub fn buy_relisted_shares_handler<'info>(
             .decimals
     };
     let total = scale_to_mint(total_quote, mint_decimals)?;
-    require!(total <= max_total_cost, MarketplaceError::CostTooHigh);
-    let fee = scale_to_mint(bps_of(total_quote, share_listing.fee_bps)?, mint_decimals)?;
-    let seller_part = total.checked_sub(fee).ok_or(MarketplaceError::Overflow)?;
+    let buyer_fee = scale_to_mint(
+        bps_of(total_quote, share_listing.buyer_fee_bps)?,
+        mint_decimals,
+    )?;
+    let seller_fee = scale_to_mint(
+        bps_of(total_quote, share_listing.seller_fee_bps)?,
+        mint_decimals,
+    )?;
+    let buyer_cost = total
+        .checked_add(buyer_fee)
+        .ok_or(MarketplaceError::Overflow)?;
+    require!(buyer_cost <= max_total_cost, MarketplaceError::CostTooHigh);
+    let seller_part = total
+        .checked_sub(seller_fee)
+        .ok_or(MarketplaceError::Overflow)?;
+    let fees = buyer_fee
+        .checked_add(seller_fee)
+        .ok_or(MarketplaceError::Overflow)?;
 
     let seller_key = ctx.accounts.seller.key();
     let buyer_key = ctx.accounts.buyer.key();
@@ -575,8 +646,15 @@ pub fn buy_relisted_shares_handler<'info>(
     // the trade can neither capture nor strand anyone's rent. A property
     // that never distributed income has no ledger yet and nothing to
     // settle; once one exists, the address pin above makes these calls
-    // unavoidable.
+    // unavoidable. The signer PDA is derived here rather than in
+    // `try_accounts` (stack room), and only the real one can sign the CPI.
     if !ctx.accounts.income.data_is_empty() {
+        let (cpi_auth_key, cpi_auth_bump) =
+            Pubkey::find_program_address(&[CPI_AUTH_SEED], &crate::ID);
+        require!(
+            ctx.accounts.cpi_auth.key() == cpi_auth_key,
+            MarketplaceError::WrongVaultAccount
+        );
         settle_income(
             &ctx.accounts.property_program.to_account_info(),
             &ctx.accounts.cpi_auth.to_account_info(),
@@ -585,7 +663,7 @@ pub fn buy_relisted_shares_handler<'info>(
             &ctx.accounts.seller_holding.to_account_info(),
             &ctx.accounts.seller_checkpoint.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.cpi_auth,
+            cpi_auth_bump,
             asset_id,
             seller_key,
         )?;
@@ -597,45 +675,51 @@ pub fn buy_relisted_shares_handler<'info>(
             &ctx.accounts.buyer_holding.to_account_info(),
             &ctx.accounts.buyer_checkpoint.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.cpi_auth,
+            cpi_auth_bump,
             asset_id,
             buyer_key,
         )?;
     }
 
-    // The seller is paid at their ATA, created if needed, so a closed
-    // account can't block the sale; same for the treasury's fee.
-    create_idempotent(CpiContext::new(
-        ctx.accounts.associated_token_program.key(),
-        CreateAta {
-            payer: ctx.accounts.payer.to_account_info(),
-            associated_token: ctx.accounts.seller_payment.to_account_info(),
-            authority: ctx.accounts.seller.to_account_info(),
-            mint: ctx.accounts.payment_mint.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            token_program: ctx.accounts.payment_token_program.to_account_info(),
-        },
-    ))?;
-    transfer_checked(
-        CpiContext::new(
-            ctx.accounts.payment_token_program.key(),
-            TransferChecked {
-                from: ctx.accounts.buyer_payment.to_account_info(),
-                mint: ctx.accounts.payment_mint.to_account_info(),
-                to: ctx.accounts.seller_payment.to_account_info(),
-                authority: ctx.accounts.buyer.to_account_info(),
-            },
+    // The net fees split between the region's operator and the treasury at
+    // the config's live share, mirroring the primary settlement; rounding
+    // dust stays with the treasury.
+    let operator_fee =
+        u64::try_from(fees as u128 * ctx.accounts.config.operator_fee_share_bps as u128 / 10_000)
+            .map_err(|_| MarketplaceError::Overflow)?;
+    let treasury_fee = fees
+        .checked_sub(operator_fee)
+        .ok_or(MarketplaceError::Overflow)?;
+
+    // Every payee is paid at their ATA, created if needed, so a closed
+    // account can't block the sale.
+    let payouts = [
+        (
+            ctx.accounts.seller.to_account_info(),
+            ctx.accounts.seller_payment.to_account_info(),
+            seller_part,
         ),
-        seller_part,
-        mint_decimals,
-    )?;
-    if fee > 0 {
+        (
+            ctx.accounts.region_owner.to_account_info(),
+            ctx.accounts.operator_payment.to_account_info(),
+            operator_fee,
+        ),
+        (
+            ctx.accounts.treasury.to_account_info(),
+            ctx.accounts.treasury_payment.to_account_info(),
+            treasury_fee,
+        ),
+    ];
+    for (authority, payment_account, payout) in payouts {
+        if payout == 0 {
+            continue;
+        }
         create_idempotent(CpiContext::new(
             ctx.accounts.associated_token_program.key(),
             CreateAta {
                 payer: ctx.accounts.payer.to_account_info(),
-                associated_token: ctx.accounts.treasury_payment.to_account_info(),
-                authority: ctx.accounts.treasury.to_account_info(),
+                associated_token: payment_account.clone(),
+                authority,
                 mint: ctx.accounts.payment_mint.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 token_program: ctx.accounts.payment_token_program.to_account_info(),
@@ -647,11 +731,11 @@ pub fn buy_relisted_shares_handler<'info>(
                 TransferChecked {
                     from: ctx.accounts.buyer_payment.to_account_info(),
                     mint: ctx.accounts.payment_mint.to_account_info(),
-                    to: ctx.accounts.treasury_payment.to_account_info(),
+                    to: payment_account,
                     authority: ctx.accounts.buyer.to_account_info(),
                 },
             ),
-            fee,
+            payout,
             mint_decimals,
         )?;
     }
@@ -665,7 +749,7 @@ pub fn buy_relisted_shares_handler<'info>(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.share_mint.to_account_info(),
         &ctx.accounts.mint_auth.to_account_info(),
-        ctx.bumps.mint_auth,
+        mint_auth_bump,
         asset_id,
         &ctx.accounts.seller_share_account.to_account_info(),
         &ctx.accounts.buyer_share_account.to_account_info(),
@@ -708,8 +792,9 @@ pub fn buy_relisted_shares_handler<'info>(
         seller: seller_key,
         amount,
         mint: mint_key,
-        paid: total,
-        fee,
+        paid: buyer_cost,
+        fees,
+        operator_fee,
         remaining,
     });
     Ok(())
@@ -1057,10 +1142,12 @@ pub struct RelistedSharesBought {
     pub seller: Pubkey,
     pub amount: u32,
     pub mint: Pubkey,
-    /// What the buyer paid in the mint's units, and the slice of it that
-    /// went to the treasury.
+    /// The buyer's full outlay in the mint's units: price plus buyer fee.
     pub paid: u64,
-    pub fee: u64,
+    /// Combined seller and buyer fees; the operator's slice of them is
+    /// broken out, the treasury took the rest.
+    pub fees: u64,
+    pub operator_fee: u64,
     pub remaining: u32,
 }
 

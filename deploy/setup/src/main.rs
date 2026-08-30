@@ -74,8 +74,8 @@ fn marketplace_params(
         lawyer_deposit: 100 * XCAV,
         min_property_shares: 2,
         max_property_shares: 100,
-        secondary_fee_bps: 100,
-        // Net primary-sale fees split 67/33 between operator and treasury.
+        // Net sale fees, primary and secondary, split 67/33 between
+        // operator and treasury.
         operator_fee_share_bps: 6_700,
         // Full range so two test investors can buy a property out; tighten
         // via update_config when the frontend tests the cap.

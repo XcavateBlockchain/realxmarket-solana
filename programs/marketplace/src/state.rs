@@ -41,9 +41,8 @@ pub struct Config {
     pub min_property_shares: u32,
     /// Most shares a property may be split into.
     pub max_property_shares: u32,
-    /// Fee on secondary share sales, paid to the treasury, in basis points.
-    pub secondary_fee_bps: u16,
-    /// The operator's share of a primary sale's net fees, in basis points.
+    /// The operator's share of a sale's net fees, primary and secondary,
+    /// in basis points.
     pub operator_fee_share_bps: u16,
     /// Largest slice of a property one investor may hold, in basis points.
     pub max_ownership_bps: u16,
@@ -440,9 +439,11 @@ pub struct ShareListing {
     pub share_price: u64,
     /// Shares still for sale; partial buys draw it down.
     pub amount: u32,
-    /// Secondary fee at the moment of listing, so a config change can't
-    /// reprice the seller's proceeds under them.
-    pub fee_bps: u16,
+    /// The region's seller fee at listing time, so a later fee change
+    /// can't reprice the seller's proceeds under them.
+    pub seller_fee_bps: u16,
+    /// The region's buyer fee at listing time, on top of the price.
+    pub buyer_fee_bps: u16,
     /// Stamped on each offer against this listing; the seller accepts by
     /// nonce, so an offer can't be swapped under their signature.
     pub next_offer_nonce: u64,

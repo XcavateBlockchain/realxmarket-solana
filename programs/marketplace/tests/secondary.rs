@@ -41,7 +41,9 @@ fn relist_reserves_the_shares() {
     assert_eq!(listing.asset_id, 0);
     assert_eq!(listing.amount, 20);
     assert_eq!(listing.share_price, ASK);
-    assert_eq!(listing.fee_bps, 100);
+    // The region's fees (1% each in the fixture), snapshotted at relist.
+    assert_eq!(listing.seller_fee_bps, 100);
+    assert_eq!(listing.buyer_fee_bps, 100);
 
     let holding = holding_of(&svm, 0, &seller.pubkey());
     assert_eq!(holding.amount, 33);
@@ -152,23 +154,31 @@ fn buy_pays_seller_and_treasury_and_moves_shares() {
     let buyer = new_investor(&mut svm, &admin);
     give_tgbp(&mut svm, &buyer.pubkey(), 150_000_000_000);
     let treasury_before = token_balance(&svm, &treasury_payment_ata());
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 12, u64::MAX),
         &buyer,
         &[&buyer],
     );
 
-    // 12 shares at 6 GBP = 72 GBP; 1% fee to the treasury, rest to the
-    // seller's ATA.
-    assert_eq!(tgbp_balance(&svm, &buyer.pubkey()), 78_000_000_000);
+    // 12 shares at 6 GBP = 72 GBP; the buyer pays 1% on top, the seller
+    // nets 1% less, and the 1.44 GBP of fees splits 67/33 between the
+    // region's operator and the treasury.
+    assert_eq!(tgbp_balance(&svm, &buyer.pubkey()), 77_280_000_000);
     assert_eq!(
         token_balance(&svm, &payment_ata(&seller.pubkey(), &tgbp_mint())),
         71_280_000_000
     );
     assert_eq!(
+        token_balance(
+            &svm,
+            &payment_ata(&region_operator().pubkey(), &tgbp_mint())
+        ),
+        964_800_000
+    );
+    assert_eq!(
         token_balance(&svm, &treasury_payment_ata()) - treasury_before,
-        720_000_000
+        475_200_000
     );
 
     // Ledger and token side agree; the listing keeps the remainder.
@@ -189,7 +199,7 @@ fn buy_pays_seller_and_treasury_and_moves_shares() {
     assert_eq!(share_listing_of(&svm, 0).amount, 8);
 
     // The rest sells out; the listing closes.
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 8, u64::MAX),
         &buyer,
@@ -215,10 +225,11 @@ fn buy_validates_the_request() {
         &[&buyer],
         "NotEnoughSharesListed",
     );
-    // 10 shares cost 60 GBP; a cap below that must reject.
+    // 10 shares cost 60 GBP plus the 1% buyer fee; a cap at the bare price
+    // must reject, proving the cap covers the full outlay.
     fails_with(
         &mut svm,
-        buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 10, 59_999_999_999),
+        buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 10, 60_000_000_000),
         &buyer,
         &[&buyer],
         "CostTooHigh",
@@ -264,7 +275,7 @@ fn buy_respects_the_ownership_cap() {
         &[buyer],
         "MaxOwnershipExceeded",
     );
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 15, u64::MAX),
         buyer,
@@ -288,6 +299,34 @@ fn buying_own_listing_is_blocked() {
     );
 }
 
+// Like accept_offer, the settle-heavy buy carries an explicit budget
+// (SECONDARY_TRADE_BUDGET); the pin sits above the observed wobble but
+// well under that budget, so a structural regression still fails loudly.
+#[test]
+fn buy_stays_within_the_compute_budget() {
+    let (mut svm, admin, investors) = finalized_property();
+    svm.add_program(marketplace::PROPERTY_PROGRAM, &program_bytes("property"))
+        .unwrap();
+    seed_income_stream(&mut svm, 2_000_000_000);
+    let seller = &investors[1];
+    relist(&mut svm, seller, 0, 20);
+    let buyer = new_investor(&mut svm, &admin);
+    give_tgbp(&mut svm, &buyer.pubkey(), 100_000_000_000);
+
+    let used = process_with_budget(
+        &mut svm,
+        buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 12, u64::MAX),
+        &buyer,
+        &[&buyer],
+    )
+    .unwrap()
+    .compute_units_consumed;
+    assert!(
+        used <= 250_000,
+        "buy_relisted_shares used {used} CU, over the 250000 pin"
+    );
+}
+
 #[test]
 fn buy_settles_income_for_both_sides() {
     let (mut svm, admin, investors) = finalized_property();
@@ -300,7 +339,7 @@ fn buy_settles_income_for_both_sides() {
     relist(&mut svm, seller, 0, 20);
     let buyer = new_investor(&mut svm, &admin);
     give_tgbp(&mut svm, &buyer.pubkey(), 100_000_000_000);
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 12, u64::MAX),
         &buyer,
@@ -334,6 +373,40 @@ fn buy_needs_the_real_income_ledger() {
     fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongVaultAccount");
 }
 
+// The operator fee follows the region record; none of its accounts can be
+// swapped to redirect it.
+#[test]
+fn buy_pins_the_region_and_its_owner() {
+    let (mut svm, admin, investors) = finalized_property();
+    let seller = &investors[1];
+    relist(&mut svm, seller, 0, 10);
+    let buyer = new_investor(&mut svm, &admin);
+    give_tgbp(&mut svm, &buyer.pubkey(), 100_000_000_000);
+
+    // A forged region account isn't owned by the regions program.
+    let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
+    swap_account(&mut ix, region_pda(1), buyer.pubkey());
+    fails_with(
+        &mut svm,
+        ix,
+        &buyer,
+        &[&buyer],
+        "AccountOwnedByWrongProgram",
+    );
+
+    // A genuine region under someone else fails the id match.
+    let intruder = funded(&mut svm);
+    seed_region(&mut svm, 2, &intruder.pubkey());
+    let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
+    swap_account(&mut ix, region_pda(1), region_pda(2));
+    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongVaultAccount");
+
+    // A wrong payee behind the real region fails the owner check.
+    let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
+    swap_account(&mut ix, region_operator().pubkey(), intruder.pubkey());
+    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongPayee");
+}
+
 // --- emptied holdings ---
 
 #[test]
@@ -343,7 +416,7 @@ fn emptied_holding_closes_and_leaves_the_count() {
     relist(&mut svm, seller, 0, 9);
     let buyer = new_investor(&mut svm, &admin);
     give_tgbp(&mut svm, &buyer.pubkey(), 100_000_000_000);
-    ok(
+    ok_with_budget(
         &mut svm,
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 9, u64::MAX),
         &buyer,

@@ -579,7 +579,6 @@ pub fn seed_market_config(svm: &mut LiteSVM, accepted: &[Pubkey]) {
         lawyer_deposit: 0,
         min_property_shares: 1,
         max_property_shares: SHARE_SUPPLY,
-        secondary_fee_bps: 0,
         operator_fee_share_bps: 0,
         max_ownership_bps: 10_000,
         claiming_time: 0,
