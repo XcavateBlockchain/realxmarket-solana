@@ -19,7 +19,7 @@ use crate::constants::{
 };
 use crate::error::MarketplaceError;
 use crate::instructions::buy::{bps_of, scale_to_mint};
-use crate::instructions::secondary::{move_shares, settle_income};
+use crate::instructions::secondary::{move_shares, require_pda, settle_income};
 use crate::state::{
     Config, Listing, ListingStatus, Offer, PropertyAsset, ShareHolding, ShareListing, LOCK_REASONS,
     MIN_PAYMENT_DECIMALS, PRICE_DECIMALS,
@@ -299,7 +299,7 @@ pub struct AcceptOffer<'info> {
 
     /// CHECK: the config, seeds-pinned here and deserialized in the handler
     /// to keep its bulk off the `try_accounts` stack; only the treasury key
-    /// is read.
+    /// and the signer bump are read.
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: UncheckedAccount<'info>,
 
@@ -407,8 +407,8 @@ pub struct AcceptOffer<'info> {
     pub share_mint: UncheckedAccount<'info>,
 
     /// CHECK: the share mint's authority PDA; permanent delegate, signs the
-    /// transfer and the lock-state changes.
-    #[account(seeds = [MINT_AUTH_SEED, &share_listing.asset_id.to_le_bytes()], bump)]
+    /// transfer and the lock-state changes. Pinned in the handler through
+    /// the property's stored bump.
     pub mint_auth: UncheckedAccount<'info>,
 
     /// CHECK: the seller's share account; the handler pins it to its
@@ -484,15 +484,6 @@ pub fn accept_offer_handler<'info>(
             ),
         MarketplaceError::WrongVaultAccount
     );
-    require!(
-        ctx.accounts.income.key()
-            == Pubkey::find_program_address(
-                &[INCOME_SEED, &asset_id.to_le_bytes()],
-                &PROPERTY_PROGRAM
-            )
-            .0,
-        MarketplaceError::WrongVaultAccount
-    );
 
     // Everything here is unchecked so `try_accounts` fits the BPF stack.
     // `try_from` proves the roles program owns each record; the recorded
@@ -530,6 +521,17 @@ pub fn accept_offer_handler<'info>(
         ctx.accounts.share_mint.key() == property.share_mint,
         MarketplaceError::WrongVaultAccount
     );
+    let asset_bytes = asset_id.to_le_bytes();
+    require_pda(
+        &ctx.accounts.mint_auth.key(),
+        &[MINT_AUTH_SEED, &asset_bytes, &[property.mint_auth_bump]],
+        &crate::ID,
+    )?;
+    require_pda(
+        &ctx.accounts.income.key(),
+        &[INCOME_SEED, &asset_bytes, &[property.income_bump]],
+        &PROPERTY_PROGRAM,
+    )?;
     let owned_after = (ctx.accounts.offeror_holding.amount as u64)
         .checked_add(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
@@ -603,16 +605,16 @@ pub fn accept_offer_handler<'info>(
     }
 
     // Both parties settle their accrued income at pre-trade balances; see
-    // `buy_relisted_shares` for the skip rule. The signer PDA is derived
+    // `buy_relisted_shares` for the skip rule. The signer PDA is pinned
     // here rather than in `try_accounts` (stack room), and only the real
     // one can sign the CPI.
     if !ctx.accounts.income.data_is_empty() {
-        let (cpi_auth_key, cpi_auth_bump) =
-            Pubkey::find_program_address(&[CPI_AUTH_SEED], &crate::ID);
-        require!(
-            ctx.accounts.cpi_auth.key() == cpi_auth_key,
-            MarketplaceError::WrongVaultAccount
-        );
+        let cpi_auth_bump = config.cpi_auth_bump;
+        require_pda(
+            &ctx.accounts.cpi_auth.key(),
+            &[CPI_AUTH_SEED, &[cpi_auth_bump]],
+            &crate::ID,
+        )?;
         settle_income(
             &ctx.accounts.property_program.to_account_info(),
             &ctx.accounts.cpi_auth.to_account_info(),
@@ -707,7 +709,7 @@ pub fn accept_offer_handler<'info>(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.share_mint.to_account_info(),
         &ctx.accounts.mint_auth.to_account_info(),
-        ctx.bumps.mint_auth,
+        property.mint_auth_bump,
         asset_id,
         &ctx.accounts.seller_share_account.to_account_info(),
         &ctx.accounts.offeror_share_account.to_account_info(),

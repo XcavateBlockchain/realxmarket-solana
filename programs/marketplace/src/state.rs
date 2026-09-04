@@ -59,6 +59,9 @@ pub struct Config {
     pub next_listing_id: u64,
     /// Monotonic id for the next secondary share listing.
     pub next_share_listing_id: u64,
+    /// Bump of the `cpi-auth` signer PDA, stored so the settle-heavy trades
+    /// pin it at fixed cost instead of searching for it.
+    pub cpi_auth_bump: u8,
     pub bump: u8,
 }
 
@@ -114,6 +117,10 @@ pub struct PropertyAsset {
     /// Wallets currently holding shares; teardown completes when it reaches
     /// zero again.
     pub holder_count: u32,
+    /// Bumps of the mint-authority PDA and of the property program's income
+    /// ledger, recorded at asset init so trades pin both at fixed cost.
+    pub mint_auth_bump: u8,
+    pub income_bump: u8,
     pub bump: u8,
 }
 

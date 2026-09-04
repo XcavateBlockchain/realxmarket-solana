@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::constants::{CONFIG_SEED, VAULT_SEED};
+use crate::constants::{CONFIG_SEED, CPI_AUTH_SEED, VAULT_SEED};
 use crate::error::MarketplaceError;
 use crate::state::{
     Config, MAX_PAYMENT_DECIMALS, MAX_PAYMENT_MINTS, MAX_SHARE_SUPPLY, MIN_PAYMENT_DECIMALS,
@@ -167,6 +167,7 @@ pub fn handler(ctx: Context<InitializeConfig>, params: ConfigParams) -> Result<(
     params.apply(config);
     config.next_listing_id = 0;
     config.next_share_listing_id = 0;
+    config.cpi_auth_bump = Pubkey::find_program_address(&[CPI_AUTH_SEED], &crate::ID).1;
     config.bump = ctx.bumps.config;
 
     emit!(ConfigInitialized {

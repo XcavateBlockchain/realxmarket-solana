@@ -18,7 +18,8 @@ use anchor_spl::token_2022_extensions::{
 };
 
 use crate::constants::{
-    CONFIG_SEED, LISTING_SEED, MINT_AUTH_SEED, PROPERTY_SEED, PROPERTY_VAULT_SEED, SHARE_MINT_SEED,
+    CONFIG_SEED, INCOME_SEED, LISTING_SEED, MINT_AUTH_SEED, PROPERTY_PROGRAM, PROPERTY_SEED,
+    PROPERTY_VAULT_SEED, SHARE_MINT_SEED,
 };
 use crate::error::MarketplaceError;
 use crate::state::{
@@ -295,6 +296,9 @@ pub fn init_property_assets_handler(
     let property = &mut ctx.accounts.property;
     property.name = name;
     property.metadata_uri = uri;
+    property.mint_auth_bump = ctx.bumps.mint_auth;
+    property.income_bump =
+        Pubkey::find_program_address(&[INCOME_SEED, &id_bytes], &PROPERTY_PROGRAM).1;
 
     ctx.accounts.property.share_mint = ctx.accounts.share_mint.key();
     ctx.accounts.listing.status = ListingStatus::Listed;

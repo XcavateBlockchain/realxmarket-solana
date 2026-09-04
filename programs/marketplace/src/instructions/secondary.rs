@@ -14,7 +14,7 @@ use anchor_spl::token_interface::{transfer_checked, TokenInterface, TransferChec
 
 use crate::constants::{
     CONFIG_SEED, CPI_AUTH_SEED, INCOME_SEED, LISTING_SEED, MINT_AUTH_SEED, PROPERTY_PROGRAM,
-    PROPERTY_SEED, SHARE_LISTING_SEED, SHARE_MINT_SEED, SHARE_SEED,
+    PROPERTY_SEED, SHARE_LISTING_SEED, SHARE_SEED,
 };
 use crate::error::MarketplaceError;
 use crate::instructions::buy::{bps_of, scale_to_mint};
@@ -79,6 +79,15 @@ pub(crate) fn settle_income<'info>(
         &[seeds],
     )
     .map_err(Into::into)
+}
+
+/// Pin an account to its PDA through a stored bump: one fixed-cost
+/// derivation, where `find_program_address` costs vary with the keys.
+pub(crate) fn require_pda(actual: &Pubkey, seeds: &[&[u8]], program: &Pubkey) -> Result<()> {
+    let expected = Pubkey::create_program_address(seeds, program)
+        .map_err(|_| MarketplaceError::WrongVaultAccount)?;
+    require_keys_eq!(*actual, expected, MarketplaceError::WrongVaultAccount);
+    Ok(())
 }
 
 /// Move shares between two wallets' Token-2022 accounts: create the
@@ -550,21 +559,18 @@ pub fn buy_relisted_shares_handler<'info>(
             ),
         MarketplaceError::WrongVaultAccount
     );
-    require!(
-        ctx.accounts.income.key()
-            == Pubkey::find_program_address(
-                &[INCOME_SEED, &asset_id.to_le_bytes()],
-                &PROPERTY_PROGRAM
-            )
-            .0,
-        MarketplaceError::WrongVaultAccount
-    );
-    let (mint_auth_key, mint_auth_bump) =
-        Pubkey::find_program_address(&[MINT_AUTH_SEED, &asset_id.to_le_bytes()], &crate::ID);
-    require!(
-        ctx.accounts.mint_auth.key() == mint_auth_key,
-        MarketplaceError::WrongVaultAccount
-    );
+    let id_bytes = asset_id.to_le_bytes();
+    require_pda(
+        &ctx.accounts.income.key(),
+        &[INCOME_SEED, &id_bytes, &[ctx.accounts.property.income_bump]],
+        &PROPERTY_PROGRAM,
+    )?;
+    let mint_auth_bump = ctx.accounts.property.mint_auth_bump;
+    require_pda(
+        &ctx.accounts.mint_auth.key(),
+        &[MINT_AUTH_SEED, &id_bytes, &[mint_auth_bump]],
+        &crate::ID,
+    )?;
     // The fee split pays the region's current owner, read live like the
     // primary settlement does. `try_from` proves the regions program owns
     // the record; region ids are unique, so the id match pins the account
@@ -646,15 +652,15 @@ pub fn buy_relisted_shares_handler<'info>(
     // the trade can neither capture nor strand anyone's rent. A property
     // that never distributed income has no ledger yet and nothing to
     // settle; once one exists, the address pin above makes these calls
-    // unavoidable. The signer PDA is derived here rather than in
+    // unavoidable. The signer PDA is pinned here rather than in
     // `try_accounts` (stack room), and only the real one can sign the CPI.
     if !ctx.accounts.income.data_is_empty() {
-        let (cpi_auth_key, cpi_auth_bump) =
-            Pubkey::find_program_address(&[CPI_AUTH_SEED], &crate::ID);
-        require!(
-            ctx.accounts.cpi_auth.key() == cpi_auth_key,
-            MarketplaceError::WrongVaultAccount
-        );
+        let cpi_auth_bump = ctx.accounts.config.cpi_auth_bump;
+        require_pda(
+            &ctx.accounts.cpi_auth.key(),
+            &[CPI_AUTH_SEED, &[cpi_auth_bump]],
+            &crate::ID,
+        )?;
         settle_income(
             &ctx.accounts.property_program.to_account_info(),
             &ctx.accounts.cpi_auth.to_account_info(),
@@ -889,12 +895,15 @@ pub struct SendShares<'info> {
     )]
     pub receiver_holding: Box<Account<'info, ShareHolding>>,
 
-    /// CHECK: the share mint PDA (owned by the Token-2022 program).
-    #[account(seeds = [SHARE_MINT_SEED, &asset_id.to_le_bytes()], bump)]
+    /// CHECK: the share mint, pinned to the key the property recorded.
+    #[account(address = property.share_mint @ MarketplaceError::WrongVaultAccount)]
     pub share_mint: UncheckedAccount<'info>,
 
     /// CHECK: the share mint's authority PDA; permanent delegate.
-    #[account(seeds = [MINT_AUTH_SEED, &asset_id.to_le_bytes()], bump)]
+    #[account(
+        seeds = [MINT_AUTH_SEED, &asset_id.to_le_bytes()],
+        bump = property.mint_auth_bump,
+    )]
     pub mint_auth: UncheckedAccount<'info>,
 
     /// CHECK: the sender's share account; the handler pins it to its
@@ -909,7 +918,7 @@ pub struct SendShares<'info> {
 
     /// CHECK: this program's CPI signer PDA; holds no data, only signs the
     /// income settlements.
-    #[account(seeds = [CPI_AUTH_SEED], bump)]
+    #[account(seeds = [CPI_AUTH_SEED], bump = config.cpi_auth_bump)]
     pub cpi_auth: UncheckedAccount<'info>,
 
     /// CHECK: the property's income ledger; the handler pins it to its
@@ -963,15 +972,15 @@ pub fn send_property_shares_handler<'info>(
             ),
         MarketplaceError::WrongVaultAccount
     );
-    require!(
-        ctx.accounts.income.key()
-            == Pubkey::find_program_address(
-                &[INCOME_SEED, &asset_id.to_le_bytes()],
-                &PROPERTY_PROGRAM
-            )
-            .0,
-        MarketplaceError::WrongVaultAccount
-    );
+    require_pda(
+        &ctx.accounts.income.key(),
+        &[
+            INCOME_SEED,
+            &asset_id.to_le_bytes(),
+            &[ctx.accounts.property.income_bump],
+        ],
+        &PROPERTY_PROGRAM,
+    )?;
 
     let owned_after = (ctx.accounts.receiver_holding.amount as u64)
         .checked_add(amount as u64)
@@ -1010,7 +1019,7 @@ pub fn send_property_shares_handler<'info>(
             &ctx.accounts.sender_holding.to_account_info(),
             &ctx.accounts.sender_checkpoint.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.cpi_auth,
+            ctx.accounts.config.cpi_auth_bump,
             asset_id,
             sender_key,
         )?;
@@ -1022,7 +1031,7 @@ pub fn send_property_shares_handler<'info>(
             &ctx.accounts.receiver_holding.to_account_info(),
             &ctx.accounts.receiver_checkpoint.to_account_info(),
             &ctx.accounts.system_program.to_account_info(),
-            ctx.bumps.cpi_auth,
+            ctx.accounts.config.cpi_auth_bump,
             asset_id,
             receiver_key,
         )?;
@@ -1035,7 +1044,7 @@ pub fn send_property_shares_handler<'info>(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.share_mint.to_account_info(),
         &ctx.accounts.mint_auth.to_account_info(),
-        ctx.bumps.mint_auth,
+        ctx.accounts.property.mint_auth_bump,
         asset_id,
         &ctx.accounts.sender_share_account.to_account_info(),
         &ctx.accounts.receiver_share_account.to_account_info(),

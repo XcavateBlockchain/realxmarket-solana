@@ -536,6 +536,13 @@ pub fn seed_property_asset(svm: &mut LiteSVM, asset_id: u64, region_id: u16, pos
         spv_created: true,
         finalized: true,
         holder_count: 3,
+        mint_auth_bump: Pubkey::find_program_address(
+            &[marketplace::MINT_AUTH_SEED, &asset_id.to_le_bytes()],
+            &mid(),
+        )
+        .1,
+        income_bump: Pubkey::find_program_address(&[INCOME_SEED, &asset_id.to_le_bytes()], &pid())
+            .1,
         bump,
     };
     let mut data = PropertyAsset::DISCRIMINATOR.to_vec();
@@ -587,6 +594,7 @@ pub fn seed_market_config(svm: &mut LiteSVM, accepted: &[Pubkey]) {
         min_voting_quorum_bps: 0,
         next_listing_id: 0,
         next_share_listing_id: 0,
+        cpi_auth_bump: Pubkey::find_program_address(&[marketplace::CPI_AUTH_SEED], &mid()).1,
         bump,
     };
     let mut data = MarketConfig::DISCRIMINATOR.to_vec();
