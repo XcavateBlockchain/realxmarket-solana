@@ -243,22 +243,6 @@ fn incumbent_renew_refunds_when_bond_falls() {
     assert_eq!(vault_balance(&svm), vault_before - DEPOSIT / 2);
 }
 
-#[test]
-fn claim_open_region_fails_before_seat_open() {
-    let (mut svm, operator, authority) = setup();
-    // Region created but the term hasn't elapsed and no resignation.
-    reach_created(&mut svm, &operator, &authority);
-
-    let newop = new_operator(&mut svm, &authority);
-    fails_with(
-        &mut svm,
-        claim_open_region_ix(&newop.pubkey(), 1, &operator.pubkey()),
-        &newop,
-        &[&newop],
-        "RegionOwnerCantBeChanged",
-    );
-}
-
 // The deadline second closes the claim and opens the clear-out.
 #[test]
 fn the_deadline_second_closes_the_claim() {

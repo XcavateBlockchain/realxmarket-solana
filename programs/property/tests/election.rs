@@ -331,7 +331,7 @@ fn finalize_assigns_the_plurality_winner() {
 }
 
 #[test]
-fn window_bounds_votes_and_the_finalizer() {
+fn finalize_waits_for_the_window() {
     let (mut svm, admin, _authority) = setup_prop();
     let agent = covering_agent(&mut svm, &admin);
     ok(
@@ -340,25 +340,13 @@ fn window_bounds_votes_and_the_finalizer() {
         &agent,
         &[&agent],
     );
-    let holder = new_holder(&mut svm, &admin, ASSET, 60);
-    let sponsor = sponsor();
     let cranker = funded(&mut svm);
-
-    // Too early to settle, and once the window closes, too late to vote.
     fails_with(
         &mut svm,
         finalize_election_ix(&cranker.pubkey(), ASSET, 1, None, &[agent.pubkey()]),
         &cranker,
         &[&cranker],
         "VotingStillOngoing",
-    );
-    warp(&mut svm, VOTING_TIME + 1);
-    fails_with(
-        &mut svm,
-        vote_agent_ix(&holder.pubkey(), ASSET, 1, &agent.pubkey(), None, 10),
-        &holder,
-        &[&holder, &sponsor],
-        "VotingClosed",
     );
 }
 

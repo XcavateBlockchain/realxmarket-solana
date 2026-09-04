@@ -444,27 +444,6 @@ fn vote_requires_an_open_election() {
     );
 }
 
-#[test]
-fn vote_after_close_fails() {
-    let (mut svm, admin, _developer, (a, _b, _c)) = setup_with_spv();
-    let spn = sponsor();
-    let lawyer = new_registered_lawyer(&mut svm, &admin, 1);
-    ok(
-        &mut svm,
-        claim_spv_ix(&lawyer.pubkey(), 0, 1, COSTS),
-        &lawyer,
-        &[&lawyer, &sponsor()],
-    );
-    warp(&mut svm, 10_001);
-    fails_with(
-        &mut svm,
-        vote_spv_ix(&a.pubkey(), 0, 1, &lawyer.pubkey(), None, 10),
-        &spn,
-        &[&spn, &a],
-        "VotingClosed",
-    );
-}
-
 // The expiry second is already the finalizer's: too late to vote, not too
 // early to count.
 #[test]

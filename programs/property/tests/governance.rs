@@ -664,23 +664,6 @@ fn passed_challenge_against_a_departed_agent_only_refunds() {
     );
 }
 
-#[test]
-fn challenge_vote_closes_at_expiry() {
-    let (mut svm, admin, _agent) = gov_setup();
-    let challenger = new_holder(&mut svm, &admin, ASSET, 10);
-    give_xcav(&mut svm, &challenger.pubkey(), FUND_XCAV);
-    challenge(&mut svm, &challenger, 1);
-    let voter = new_holder(&mut svm, &admin, ASSET, 50);
-    warp(&mut svm, VOTING_TIME + 1);
-    fails_with(
-        &mut svm,
-        vote_challenge_ix(&voter.pubkey(), ASSET, 1, VoteChoice::Yes, 10),
-        &voter,
-        &[&voter, &sponsor()],
-        "VotingClosed",
-    );
-}
-
 // Same boundary rule for challenges: the expiry second belongs to the
 // finalizer, not the voters.
 #[test]

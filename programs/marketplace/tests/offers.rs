@@ -713,7 +713,7 @@ fn anothers_role_cannot_stand_in_at_accept() {
 }
 
 #[test]
-fn accept_fees_go_only_to_the_treasury() {
+fn accept_pins_the_treasury() {
     let (mut svm, admin, investors) = listed_property();
     let seller = &investors[1];
     let offeror = new_investor(&mut svm, &admin);

@@ -88,13 +88,15 @@ fn renewing_clears_the_wallet_again() {
 }
 
 // A sanctions hit blocks the wallet outright, and unlike a lapse it does not
-// heal on its own.
+// heal on its own; only a fresh clearance lifts it.
 #[test]
 fn a_blocked_wallet_is_rejected() {
     let (mut svm, admin, developer) = listable();
     set_compliance(&mut svm, &admin, &developer.pubkey(), false);
-
     listing_fails(&mut svm, &developer, 0, "NotCompliant");
+
+    set_compliance(&mut svm, &admin, &developer.pubkey(), true);
+    lists_ok(&mut svm, &developer, 0);
 }
 
 #[test]

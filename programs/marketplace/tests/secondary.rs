@@ -146,7 +146,7 @@ fn delist_frees_the_reserve() {
 // --- buying ---
 
 #[test]
-fn buy_pays_seller_and_treasury_and_moves_shares() {
+fn buy_pays_out_and_moves_shares() {
     let (mut svm, admin, investors) = finalized_property();
     let seller = &investors[1];
     relist(&mut svm, seller, 0, 20);

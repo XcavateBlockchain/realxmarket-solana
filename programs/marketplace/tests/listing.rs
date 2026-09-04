@@ -96,30 +96,6 @@ fn list_requires_developer_role() {
     );
 }
 
-// list_property starts the flow that takes investor funds, so it is one of the
-// calls gated on the compliance flag, not just role possession.
-#[test]
-fn list_requires_a_compliant_developer() {
-    let (mut svm, admin, _authority, developer) = setup_listing();
-    set_compliance(&mut svm, &admin, &developer.pubkey(), false);
-    fails_with(
-        &mut svm,
-        list_ix(&developer.pubkey(), 0),
-        &developer,
-        &[&developer],
-        "NotCompliant",
-    );
-
-    // Restored compliance lists fine again.
-    set_compliance(&mut svm, &admin, &developer.pubkey(), true);
-    ok(
-        &mut svm,
-        list_ix(&developer.pubkey(), 0),
-        &developer,
-        &[&developer],
-    );
-}
-
 #[test]
 fn list_requires_registered_location() {
     let (mut svm, _admin, _authority, developer) = setup_listing();

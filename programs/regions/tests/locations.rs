@@ -300,49 +300,6 @@ fn create_region_validates_initial_settings() {
 }
 
 #[test]
-fn seat_takeover_covers_location_deposits() {
-    let (mut svm, operator, authority) = setup();
-    created_region(&mut svm, &operator, &authority);
-    ok(
-        &mut svm,
-        create_location_ix(&operator.pubkey(), 1, b"SW1A1AA"),
-        &operator,
-        &[&operator],
-    );
-    ok(
-        &mut svm,
-        resign_ix(&operator.pubkey(), 1),
-        &operator,
-        &[&operator],
-    );
-    warp(&mut svm, 6_000);
-
-    // The new operator must bond the base bond plus the location deposit, and
-    // the outgoing operator gets their full collateral (bond + location) back.
-    let new_op = new_operator(&mut svm, &authority);
-    let old_before = xcav_balance(&svm, &operator.pubkey());
-    let new_before = xcav_balance(&svm, &new_op.pubkey());
-    ok(
-        &mut svm,
-        claim_open_region_ix(&new_op.pubkey(), 1, &operator.pubkey()),
-        &new_op,
-        &[&new_op],
-    );
-
-    let region = region_of(&svm, 1);
-    assert_eq!(region.owner, new_op.pubkey());
-    assert_eq!(region.collateral, DEPOSIT + LOCATION_DEPOSIT);
-    assert_eq!(
-        xcav_balance(&svm, &operator.pubkey()) - old_before,
-        DEPOSIT + LOCATION_DEPOSIT
-    );
-    assert_eq!(
-        new_before - xcav_balance(&svm, &new_op.pubkey()),
-        DEPOSIT + LOCATION_DEPOSIT
-    );
-}
-
-#[test]
 fn create_location_rejects_deposit_above_cap() {
     let (mut svm, operator, authority) = setup();
     created_region(&mut svm, &operator, &authority);

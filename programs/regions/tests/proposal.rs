@@ -195,30 +195,8 @@ fn revote_replaces_previous_vote() {
     assert_eq!(vault_balance(&svm), DEPOSIT + 300_000_000);
 }
 
-#[test]
-fn vote_after_expiry_fails() {
-    let (mut svm, operator, _authority) = setup();
-    let id = next_proposal_id(&svm);
-    ok(
-        &mut svm,
-        propose_ix(&operator.pubkey(), 1, id),
-        &operator,
-        &[&operator],
-    );
-
-    warp_past_voting(&mut svm);
-    let voter = actor(&mut svm);
-    fails_with(
-        &mut svm,
-        vote_ix(&voter.pubkey(), 1, id, Vote::Yes, 200_000_000),
-        &voter,
-        &[&voter],
-        "ProposalExpired",
-    );
-}
-
-// Default params run a 1_000s vote with a 100s minimum hold, putting the
-// cutoff 100s before expiry. Its first second is already too late.
+// Power can't be rented for one slot: the 100s minimum hold puts the
+// cutoff 100s before expiry, and its first second is already too late.
 #[test]
 fn the_cutoff_second_is_too_late_to_vote() {
     let (mut svm, operator, _authority) = setup();
@@ -855,42 +833,6 @@ fn finalize_pass_keeps_bond_locked() {
     assert_eq!(region_state_of(&svm, 1).status, RegionStatus::Passed);
     assert_eq!(xcav_balance(&svm, &operator.pubkey()), op_before);
     assert_eq!(vault_balance(&svm), DEPOSIT + 200_000_000);
-}
-
-// Power can't be rented for one slot: a vote landing inside the min-hold
-// window (100s before expiry) is rejected, so every lock lasts at least that
-// long past the tally.
-#[test]
-fn vote_inside_hold_window_fails() {
-    let (mut svm, operator, _authority) = setup();
-    let id = next_proposal_id(&svm);
-    ok(
-        &mut svm,
-        propose_ix(&operator.pubkey(), 1, id),
-        &operator,
-        &[&operator],
-    );
-
-    // 150s of the 1_000s window left: still fine.
-    warp(&mut svm, 850);
-    let early = actor(&mut svm);
-    ok(
-        &mut svm,
-        vote_ix(&early.pubkey(), 1, id, Vote::Yes, 200_000_000),
-        &early,
-        &[&early],
-    );
-
-    // 50s left: inside the hold window.
-    warp(&mut svm, 100);
-    let late = actor(&mut svm);
-    fails_with(
-        &mut svm,
-        vote_ix(&late.pubkey(), 1, id, Vote::Yes, 200_000_000),
-        &late,
-        &[&late],
-        "VoteTooLate",
-    );
 }
 
 #[test]
