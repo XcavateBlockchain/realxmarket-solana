@@ -9,10 +9,11 @@
   "docs": [
     "Roles and compliance registry for the realXmarket protocol.",
     "",
-    "Tracks which addresses hold which roles and whether each assignment is",
-    "KYC-compliant. Other programs gate actions by loading the `RoleAccount`",
-    "PDA (`[\"role\", user, role.seed_byte()]`), which requires the role to be",
-    "assigned."
+    "Two separate registries. Roles say what an address may do, and are read as",
+    "the `RoleAccount` PDA (`[\"role\", user, role.seed_byte()]`), whose existence",
+    "is the grant. Compliance says whether an address is cleared to move money,",
+    "and is read as the `Compliance` PDA (`[\"compliance\", user]`), which carries",
+    "a screening verdict and an expiry."
   ],
   "instructions": [
     {
@@ -134,7 +135,7 @@
     {
       "name": "assign_role",
       "docs": [
-        "Assign a role to a user (default Compliant). Admin-only."
+        "Assign a role to a user. Admin-only."
       ],
       "discriminator": [
         255,
@@ -332,6 +333,84 @@
       ]
     },
     {
+      "name": "remove_compliance",
+      "docs": [
+        "Delete a wallet's compliance record. Admin-only."
+      ],
+      "discriminator": [
+        8,
+        69,
+        7,
+        32,
+        201,
+        15,
+        6,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "admin_signer",
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  100,
+                  109,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "admin_signer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user"
+        },
+        {
+          "name": "rent_payer",
+          "writable": true
+        },
+        {
+          "name": "compliance",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "remove_role",
       "docs": [
         "Remove a role from a user. Admin-only."
@@ -436,27 +515,32 @@
       ]
     },
     {
-      "name": "set_permission",
+      "name": "set_compliance",
       "docs": [
-        "Update a user's compliance status for a role. Admin-only."
+        "Record a wallet's screening outcome, creating the record on first use.",
+        "Admin-only."
       ],
       "discriminator": [
-        70,
-        126,
-        41,
-        194,
-        245,
-        189,
+        46,
         128,
-        8
+        120,
+        26,
+        105,
+        175,
+        165,
+        6
       ],
       "accounts": [
         {
           "name": "admin_signer",
+          "writable": true,
           "signer": true
         },
         {
           "name": "admin",
+          "docs": [
+            "Proves `admin_signer` is a registered admin (PDA must exist)."
+          ],
           "pda": {
             "seeds": [
               {
@@ -480,26 +564,49 @@
           "name": "user"
         },
         {
-          "name": "role_account",
-          "writable": true
+          "name": "compliance",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "role",
+          "name": "status",
           "type": {
             "defined": {
-              "name": "Role"
+              "name": "ComplianceStatus"
             }
           }
         },
         {
-          "name": "permission",
-          "type": {
-            "defined": {
-              "name": "AccessPermission"
-            }
-          }
+          "name": "expires_at",
+          "type": "i64"
         }
       ]
     },
@@ -566,6 +673,19 @@
         73,
         4,
         65
+      ]
+    },
+    {
+      "name": "Compliance",
+      "discriminator": [
+        70,
+        167,
+        82,
+        216,
+        51,
+        133,
+        241,
+        143
       ]
     },
     {
@@ -649,6 +769,32 @@
       ]
     },
     {
+      "name": "ComplianceRemoved",
+      "discriminator": [
+        241,
+        201,
+        65,
+        162,
+        28,
+        26,
+        175,
+        237
+      ]
+    },
+    {
+      "name": "ComplianceSet",
+      "discriminator": [
+        230,
+        215,
+        171,
+        40,
+        100,
+        139,
+        61,
+        122
+      ]
+    },
+    {
       "name": "ConfigInitialized",
       "discriminator": [
         181,
@@ -659,19 +805,6 @@
         167,
         178,
         91
-      ]
-    },
-    {
-      "name": "PermissionUpdated",
-      "discriminator": [
-        82,
-        173,
-        224,
-        81,
-        165,
-        91,
-        56,
-        31
       ]
     },
     {
@@ -709,8 +842,8 @@
     },
     {
       "code": 6001,
-      "name": "PermissionAlreadySet",
-      "msg": "Permission is already set to this value"
+      "name": "InvalidExpiry",
+      "msg": "Invalid compliance expiry"
     },
     {
       "code": 6002,
@@ -734,30 +867,6 @@
     }
   ],
   "types": [
-    {
-      "name": "AccessPermission",
-      "docs": [
-        "Compliance status for a (user, role) assignment, set by an admin after",
-        "off-chain KYC/AML. Only the marketplace's investor-fund calls (listing,",
-        "buying, offers, share transfers, lawyer case work) require this flag on",
-        "top of the role; every other instruction checks role possession alone.",
-        "Later it'll be driven by a SAS attestation instead of a manual toggle.",
-        "",
-        "Do not reorder the variants: the serialized `RoleAccount.permission`",
-        "stores the variant index, so a reorder flips every stored status."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Compliant"
-          },
-          {
-            "name": "Revoked"
-          }
-        ]
-      }
-    },
     {
       "name": "Admin",
       "docs": [
@@ -834,6 +943,109 @@
       }
     },
     {
+      "name": "Compliance",
+      "docs": [
+        "One wallet's compliance standing, set by an admin after off-chain KYC/AML.",
+        "Held per wallet rather than per role: screening is a property of the person,",
+        "and a holder of two roles must not be able to carry two disagreeing",
+        "verdicts."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ComplianceStatus"
+              }
+            }
+          },
+          {
+            "name": "expires_at",
+            "docs": [
+              "Unix seconds after which this stops clearing anyone, or 0 to never",
+              "expire. Screening is continuous, so a date is what forces a re-check."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "rent_payer",
+            "docs": [
+              "Who paid the account's rent (the setting admin); teardown refunds them."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ComplianceRemoved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ComplianceSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ComplianceStatus"
+              }
+            }
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ComplianceStatus",
+      "docs": [
+        "Screening outcome for a wallet. `Blocked` is a positive statement, not the",
+        "absence of a record: deleting the account only takes a wallet back to",
+        "never-screened, so a sanctions hit has to stay on file.",
+        "",
+        "Do not reorder the variants: the serialized `Compliance.status` stores the",
+        "variant index."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Cleared"
+          },
+          {
+            "name": "Blocked"
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "docs": [
         "Singleton config holding the sudo authority that manages admins."
@@ -878,41 +1090,13 @@
       }
     },
     {
-      "name": "PermissionUpdated",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "user",
-            "type": "pubkey"
-          },
-          {
-            "name": "role",
-            "type": {
-              "defined": {
-                "name": "Role"
-              }
-            }
-          },
-          {
-            "name": "permission",
-            "type": {
-              "defined": {
-                "name": "AccessPermission"
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
       "name": "Role",
       "docs": [
         "All roles recognised across the realXmarket protocol.",
         "",
-        "A role is app-level authorization, separate from KYC/compliance. Compliance",
-        "lives in [`AccessPermission`], and will eventually be driven by SAS",
-        "attestations rather than a manually set flag.",
+        "A role is app-level authorization, separate from KYC. Screening lives in",
+        "the per-wallet `Compliance` account, which the consuming programs check",
+        "alongside the role, so a role account tracks assignment only.",
         "",
         "Do not reorder the variants: the serialized `RoleAccount.role` stores the",
         "variant index, so a reorder reinterprets every existing assignment."
@@ -944,7 +1128,7 @@
     {
       "name": "RoleAccount",
       "docs": [
-        "One (user, role) assignment together with its compliance status."
+        "One (user, role) assignment. Its existence is the grant."
       ],
       "type": {
         "kind": "struct",
@@ -958,14 +1142,6 @@
             "type": {
               "defined": {
                 "name": "Role"
-              }
-            }
-          },
-          {
-            "name": "permission",
-            "type": {
-              "defined": {
-                "name": "AccessPermission"
               }
             }
           },
@@ -1033,6 +1209,14 @@
       ],
       "type": "bytes",
       "value": "[97, 100, 109, 105, 110]"
+    },
+    {
+      "name": "COMPLIANCE_SEED",
+      "docs": [
+        "PDA seed for a per-user compliance record."
+      ],
+      "type": "bytes",
+      "value": "[99, 111, 109, 112, 108, 105, 97, 110, 99, 101]"
     },
     {
       "name": "CONFIG_SEED",

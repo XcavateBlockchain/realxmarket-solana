@@ -168,7 +168,7 @@ pub fn execute_deal_handler<'info>(
                     &entry.mint,
                     token_program,
                 ),
-            MarketplaceError::WrongVaultAccount
+            MarketplaceError::WrongTokenAccount
         );
         // Each payee's account must hold this mint and belong to them; any
         // account of theirs will do, since the money is theirs either way.

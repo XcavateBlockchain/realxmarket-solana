@@ -75,14 +75,23 @@
         {
           "name": "seller_role",
           "docs": [
-            "program; deserialized in the handler for the compliance flag."
+            "proved in the handler, like the bidder's."
           ]
+        },
+        {
+          "name": "seller_compliance",
+          "docs": [
+            "the handler, to keep `try_accounts` inside the BPF stack frame."
+          ]
+        },
+        {
+          "name": "offeror_compliance"
         },
         {
           "name": "config",
           "docs": [
             "to keep its bulk off the `try_accounts` stack; only the treasury key",
-            "is read."
+            "and the signer bump are read."
           ],
           "pda": {
             "seeds": [
@@ -352,60 +361,36 @@
           "writable": true
         },
         {
+          "name": "region",
+          "docs": [
+            "owns it, matches its id, and reads the current owner."
+          ]
+        },
+        {
+          "name": "region_owner",
+          "docs": [
+            "region record. Authority of the ATA below."
+          ]
+        },
+        {
+          "name": "operator_payment",
+          "docs": [
+            "created idempotently."
+          ],
+          "writable": true
+        },
+        {
           "name": "share_mint",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  97,
-                  114,
-                  101,
-                  45,
-                  109,
-                  105,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "share_listing.asset_id",
-                "account": "ShareListing"
-              }
-            ]
-          }
+          "docs": [
+            "stored mint key (out of `try_accounts` for stack room)."
+          ]
         },
         {
           "name": "mint_auth",
           "docs": [
-            "transfer and the lock-state changes."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  105,
-                  110,
-                  116,
-                  45,
-                  97,
-                  117,
-                  116,
-                  104
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "share_listing.asset_id",
-                "account": "ShareListing"
-              }
-            ]
-          }
+            "transfer and the lock-state changes. Pinned in the handler through",
+            "the property's stored bump."
+          ]
         },
         {
           "name": "seller_share_account",
@@ -424,25 +409,8 @@
         {
           "name": "cpi_auth",
           "docs": [
-            "income settlements."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  112,
-                  105,
-                  45,
-                  97,
-                  117,
-                  116,
-                  104
-                ]
-              }
-            ]
-          }
+            "income settlements. Derived in the handler (stack room)."
+          ]
         },
         {
           "name": "income",
@@ -530,9 +498,90 @@
         {
           "name": "lawyer_role",
           "docs": [
-            "The named lawyer's role; they carry the legal responsibility, so the",
-            "compliance flag is checked even though they aren't the signer."
+            "The named lawyer's role. They carry the legal responsibility, so their",
+            "KYC is checked too even though they aren't the signer."
           ]
+        },
+        {
+          "name": "lawyer_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "lawyer"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "registry",
@@ -670,6 +719,69 @@
           "docs": [
             "The caller's RealEstateInvestor role, owned by the roles program."
           ]
+        },
+        {
+          "name": "investor_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "investor"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
         },
         {
           "name": "listing",
@@ -1043,6 +1155,12 @@
           ]
         },
         {
+          "name": "buyer_compliance",
+          "docs": [
+            "in the handler, to keep `try_accounts` inside the BPF stack frame."
+          ]
+        },
+        {
           "name": "config",
           "pda": {
             "seeds": [
@@ -1063,29 +1181,9 @@
         {
           "name": "listing",
           "docs": [
-            "snapshot), seeds-pinned here and deserialized in the handler to keep",
-            "its bulk off the `try_accounts` stack."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  108,
-                  105,
-                  115,
-                  116,
-                  105,
-                  110,
-                  103
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "asset_id"
-              }
-            ]
-          }
+            "snapshot); the handler deserializes it and matches its stored asset",
+            "id, all out of `try_accounts` for stack room."
+          ]
         },
         {
           "name": "property",
@@ -1241,58 +1339,36 @@
           "writable": true
         },
         {
+          "name": "region",
+          "docs": [
+            "owns it, matches its id, and reads the current owner."
+          ]
+        },
+        {
+          "name": "region_owner",
+          "docs": [
+            "region record. Authority of the ATA below."
+          ]
+        },
+        {
+          "name": "operator_payment",
+          "docs": [
+            "created idempotently."
+          ],
+          "writable": true
+        },
+        {
           "name": "share_mint",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  97,
-                  114,
-                  101,
-                  45,
-                  109,
-                  105,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "asset_id"
-              }
-            ]
-          }
+          "docs": [
+            "of `try_accounts` for stack room)."
+          ]
         },
         {
           "name": "mint_auth",
           "docs": [
-            "transfer and the lock-state changes."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  105,
-                  110,
-                  116,
-                  45,
-                  97,
-                  117,
-                  116,
-                  104
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "asset_id"
-              }
-            ]
-          }
+            "transfer and the lock-state changes. Derived in the handler (stack",
+            "room)."
+          ]
         },
         {
           "name": "seller_share_account",
@@ -1311,25 +1387,8 @@
         {
           "name": "cpi_auth",
           "docs": [
-            "income settlements."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  112,
-                  105,
-                  45,
-                  97,
-                  117,
-                  116,
-                  104
-                ]
-              }
-            ]
-          }
+            "income settlements. Derived in the handler (stack room)."
+          ]
         },
         {
           "name": "income",
@@ -1571,6 +1630,69 @@
           "docs": [
             "The caller's RealEstateInvestor role, owned by the roles program."
           ]
+        },
+        {
+          "name": "investor_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "investor"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
         },
         {
           "name": "listing",
@@ -1915,6 +2037,87 @@
           "docs": [
             "The caller's Lawyer role, owned by the roles program."
           ]
+        },
+        {
+          "name": "lawyer_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "lawyer"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "registry",
@@ -2625,6 +2828,115 @@
       "args": []
     },
     {
+      "name": "close_settled_payment_accounts",
+      "discriminator": [
+        239,
+        208,
+        135,
+        11,
+        40,
+        29,
+        16,
+        128
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_collector",
+          "writable": true
+        },
+        {
+          "name": "listing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "listing_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing_vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103,
+                  45,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "listing_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "share_token_program",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        },
+        {
+          "name": "payment_token_program",
+          "docs": [
+            "The token program owning the remaining payment accounts."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "listing_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "close_share_holding",
       "discriminator": [
         184,
@@ -2973,7 +3285,7 @@
           "name": "region",
           "docs": [
             "The property's region, owned by the regions program; its operator",
-            "takes half the leftover fees."
+            "takes the configured share of the leftover fees."
           ],
           "pda": {
             "seeds": [
@@ -3273,10 +3585,93 @@
         {
           "name": "developer_role",
           "docs": [
-            "The caller's RealEstateDeveloper role. The whole two-step listing is",
-            "one compliance-gated flow, so the second step re-checks the flag; a",
-            "developer revoked between the steps can't open the sale."
+            "The caller's RealEstateDeveloper role, owned by the roles program."
           ]
+        },
+        {
+          "name": "developer_compliance",
+          "docs": [
+            "The two-step listing is one gated flow, so the second step re-checks",
+            "both claims. A developer revoked between the steps can't open the sale."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "developer"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "listing",
@@ -3659,10 +4054,76 @@
           ]
         },
         {
+          "name": "developer_compliance",
+          "docs": [
+            "The caller's compliance record, owned by the roles program."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "developer"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
           "name": "region",
           "docs": [
             "The region the property sits in, owned by the regions program. Read for",
-            "the tax and listing-duration snapshot."
+            "the tax, fee and listing-duration snapshot."
           ],
           "pda": {
             "seeds": [
@@ -4066,6 +4527,69 @@
             "The bidder's investor role, owned by the roles program; must be",
             "compliant, since investor money moves."
           ]
+        },
+        {
+          "name": "offeror_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "offeror"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
         },
         {
           "name": "config",
@@ -4757,6 +5281,69 @@
           ]
         },
         {
+          "name": "seller_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
           "name": "listing",
           "docs": [
             "The primary listing; carries the property's lifecycle status."
@@ -4780,6 +5367,97 @@
                 "path": "asset_id"
               }
             ]
+          }
+        },
+        {
+          "name": "property",
+          "docs": [
+            "The property; names the region whose fees get snapshotted."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  101,
+                  114,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "asset_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "region",
+          "docs": [
+            "The property's region, owned by the regions program. Read for the",
+            "fee snapshot, same as the primary listing."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "property.region_id",
+                "account": "PropertyAsset"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                70,
+                43,
+                73,
+                219,
+                220,
+                131,
+                35,
+                160,
+                98,
+                225,
+                10,
+                109,
+                39,
+                180,
+                166,
+                187,
+                128,
+                222,
+                86,
+                153,
+                149,
+                224,
+                194,
+                122,
+                73,
+                210,
+                128,
+                208,
+                94,
+                108,
+                148,
+                159
+              ]
+            }
           }
         },
         {
@@ -4907,6 +5585,69 @@
           "docs": [
             "The caller's RealEstateInvestor role, owned by the roles program."
           ]
+        },
+        {
+          "name": "investor_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "investor"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
         },
         {
           "name": "listing",
@@ -5205,6 +5946,69 @@
           ]
         },
         {
+          "name": "sender_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sender"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
           "name": "receiver"
         },
         {
@@ -5213,6 +6017,87 @@
             "The receiver's investor role; shares only ever land with compliant",
             "investors."
           ]
+        },
+        {
+          "name": "receiver_compliance",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "receiver"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "listing",
@@ -5318,30 +6203,7 @@
           }
         },
         {
-          "name": "share_mint",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  115,
-                  104,
-                  97,
-                  114,
-                  101,
-                  45,
-                  109,
-                  105,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "asset_id"
-              }
-            ]
-          }
+          "name": "share_mint"
         },
         {
           "name": "mint_auth",
@@ -5804,6 +6666,12 @@
         },
         {
           "name": "listing",
+          "docs": [
+            "Typed, unlike `close_candidacy`'s tolerant listing: teardown requires",
+            "`holder_count == 0`, holdings only empty with `locked() == 0`, so",
+            "every lock is provably released while the listing still exists.",
+            "Relaxing that teardown guard would make this a permanent lock."
+          ],
           "pda": {
             "seeds": [
               {
@@ -6229,9 +7097,92 @@
         {
           "name": "developer_role",
           "docs": [
-            "The caller's RealEstateDeveloper role, owned by the roles program;",
-            "must be compliant, since repricing steers investor money."
+            "The caller's RealEstateDeveloper role, owned by the roles program."
           ]
+        },
+        {
+          "name": "developer_compliance",
+          "docs": [
+            "Repricing steers investor money, so the developer's KYC is checked too."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  112,
+                  108,
+                  105,
+                  97,
+                  110,
+                  99,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "developer"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                96,
+                7,
+                192,
+                164,
+                50,
+                225,
+                66,
+                142,
+                206,
+                110,
+                212,
+                225,
+                94,
+                192,
+                160,
+                88,
+                228,
+                20,
+                189,
+                248,
+                2,
+                55,
+                212,
+                25,
+                32,
+                148,
+                220,
+                60,
+                203,
+                61,
+                113,
+                97
+              ]
+            }
+          }
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "listing",
@@ -8039,6 +8990,19 @@
       ]
     },
     {
+      "name": "SettledVaultClosed",
+      "discriminator": [
+        222,
+        119,
+        5,
+        194,
+        7,
+        82,
+        75,
+        54
+      ]
+    },
+    {
       "name": "ShareHoldingClosed",
       "discriminator": [
         31,
@@ -8234,7 +9198,7 @@
     {
       "code": 6007,
       "name": "NotCompliant",
-      "msg": "Role is not compliant"
+      "msg": "Wallet is not compliant"
     },
     {
       "code": 6008,
@@ -8383,8 +9347,8 @@
     },
     {
       "code": 6037,
-      "name": "WrongVaultAccount",
-      "msg": "Wrong vault account"
+      "name": "WrongTokenAccount",
+      "msg": "Wrong token account"
     },
     {
       "code": 6038,
@@ -8523,115 +9487,111 @@
     },
     {
       "code": 6065,
-      "name": "NothingToSettle",
-      "msg": "Nothing to settle"
-    },
-    {
-      "code": 6066,
       "name": "WrongRentPayer",
       "msg": "Not the wallet that fronted the rent"
     },
     {
-      "code": 6067,
+      "code": 6066,
       "name": "VerdictWindowOpen",
       "msg": "The silent side still has time to rule"
     },
     {
-      "code": 6068,
+      "code": 6067,
       "name": "NoVerdictPassed",
       "msg": "No side has ruled yet"
     },
     {
-      "code": 6069,
+      "code": 6068,
       "name": "CostsStillDue",
       "msg": "The SPV lawyer's costs are still unpaid"
     },
     {
-      "code": 6070,
+      "code": 6069,
       "name": "TooManyMints",
       "msg": "Too many payment mints on this listing"
     },
     {
-      "code": 6071,
+      "code": 6070,
       "name": "WrongPayee",
       "msg": "Payout account not owned by the payee"
     },
     {
-      "code": 6072,
+      "code": 6071,
       "name": "TaxExceedsProceeds",
       "msg": "Tax and marketplace fee together exceed the sale proceeds"
     },
     {
-      "code": 6073,
+      "code": 6072,
       "name": "PropertyNotFinalized",
       "msg": "Property is not finalized"
     },
     {
-      "code": 6074,
+      "code": 6073,
       "name": "NotEnoughSharesListed",
       "msg": "Not enough shares listed"
     },
     {
-      "code": 6075,
+      "code": 6074,
       "name": "WrongSeller",
       "msg": "Caller is not the seller"
     },
     {
-      "code": 6076,
+      "code": 6075,
       "name": "HoldingNotEmpty",
       "msg": "Holding is not empty"
     },
     {
-      "code": 6077,
+      "code": 6076,
       "name": "OfferNonceMismatch",
       "msg": "Offer nonce does not match"
     },
     {
-      "code": 6078,
-      "name": "WrongOfferor",
-      "msg": "Caller did not make this offer"
-    },
-    {
-      "code": 6079,
+      "code": 6077,
       "name": "SelfOffer",
       "msg": "Cannot bid on own listing"
     },
     {
-      "code": 6080,
+      "code": 6078,
       "name": "WrongProgram",
       "msg": "Wrong program account"
     },
     {
-      "code": 6081,
+      "code": 6079,
       "name": "InvalidAssetMetadata",
       "msg": "Invalid asset name or URI"
+    },
+    {
+      "code": 6080,
+      "name": "WrongRegistryAccount",
+      "msg": "Wrong registry account"
+    },
+    {
+      "code": 6081,
+      "name": "WrongShareMint",
+      "msg": "Share mint does not match the property"
+    },
+    {
+      "code": 6082,
+      "name": "WrongRegionAccount",
+      "msg": "Region record does not match the property's region"
+    },
+    {
+      "code": 6083,
+      "name": "WrongMintAuthority",
+      "msg": "Not the share mint's authority PDA"
+    },
+    {
+      "code": 6084,
+      "name": "WrongIncomeLedger",
+      "msg": "Not the property's income ledger"
+    },
+    {
+      "code": 6085,
+      "name": "WrongCpiSigner",
+      "msg": "Not this program's CPI signer PDA"
     }
   ],
   "types": [
-    {
-      "name": "AccessPermission",
-      "docs": [
-        "Compliance status for a (user, role) assignment, set by an admin after",
-        "off-chain KYC/AML. Only the marketplace's investor-fund calls (listing,",
-        "buying, offers, share transfers, lawyer case work) require this flag on",
-        "top of the role; every other instruction checks role possession alone.",
-        "Later it'll be driven by a SAS attestation instead of a manual toggle.",
-        "",
-        "Do not reorder the variants: the serialized `RoleAccount.permission`",
-        "stores the variant index, so a reorder flips every stored status."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Compliant"
-          },
-          {
-            "name": "Revoked"
-          }
-        ]
-      }
-    },
     {
       "name": "AuthorityUpdateProposed",
       "type": {
@@ -8796,6 +9756,73 @@
       }
     },
     {
+      "name": "Compliance",
+      "docs": [
+        "One wallet's compliance standing, set by an admin after off-chain KYC/AML.",
+        "Held per wallet rather than per role: screening is a property of the person,",
+        "and a holder of two roles must not be able to carry two disagreeing",
+        "verdicts."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "ComplianceStatus"
+              }
+            }
+          },
+          {
+            "name": "expires_at",
+            "docs": [
+              "Unix seconds after which this stops clearing anyone, or 0 to never",
+              "expire. Screening is continuous, so a date is what forces a re-check."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "rent_payer",
+            "docs": [
+              "Who paid the account's rent (the setting admin); teardown refunds them."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ComplianceStatus",
+      "docs": [
+        "Screening outcome for a wallet. `Blocked` is a positive statement, not the",
+        "absence of a record: deleting the account only takes a wallet back to",
+        "never-screened, so a sanctions hit has to stay on file.",
+        "",
+        "Do not reorder the variants: the serialized `Compliance.status` stores the",
+        "variant index."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Cleared"
+          },
+          {
+            "name": "Blocked"
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "docs": [
         "Singleton config holding protocol parameters and the authority."
@@ -8884,16 +9911,10 @@
             "type": "u32"
           },
           {
-            "name": "marketplace_fee_bps",
+            "name": "operator_fee_share_bps",
             "docs": [
-              "Protocol fee taken from the developer's proceeds, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "investor_fee_bps",
-            "docs": [
-              "Fee an investor pays on top of the share price, in basis points."
+              "The operator's share of a sale's net fees, primary and secondary,",
+              "in basis points."
             ],
             "type": "u16"
           },
@@ -8946,6 +9967,14 @@
               "Monotonic id for the next secondary share listing."
             ],
             "type": "u64"
+          },
+          {
+            "name": "cpi_auth_bump",
+            "docs": [
+              "Bump of the `cpi-auth` signer PDA, stored so the settle-heavy trades",
+              "pin it at fixed cost instead of searching for it."
+            ],
+            "type": "u8"
           },
           {
             "name": "bump",
@@ -9013,11 +10042,7 @@
             "type": "u32"
           },
           {
-            "name": "marketplace_fee_bps",
-            "type": "u16"
-          },
-          {
-            "name": "investor_fee_bps",
+            "name": "operator_fee_share_bps",
             "type": "u16"
           },
           {
@@ -9053,11 +10078,7 @@
             "type": "pubkey"
           },
           {
-            "name": "marketplace_fee_bps",
-            "type": "u16"
-          },
-          {
-            "name": "investor_fee_bps",
+            "name": "operator_fee_share_bps",
             "type": "u16"
           }
         ]
@@ -9304,7 +10325,7 @@
           {
             "name": "paid_fee",
             "docs": [
-              "Paid as the investor fee on top, in payment-mint base units."
+              "Paid as the buyer fee on top, in payment-mint base units."
             ],
             "type": "u64"
           },
@@ -9325,7 +10346,7 @@
           {
             "name": "reserved_fee",
             "docs": [
-              "Reserved for the investor fee, still in the investor's wallet."
+              "Reserved for the buyer fee, still in the investor's wallet."
             ],
             "type": "u64"
           },
@@ -9680,16 +10701,16 @@
             "type": "u16"
           },
           {
-            "name": "marketplace_fee_bps",
+            "name": "seller_fee_bps",
             "docs": [
-              "Protocol fee at listing time, in basis points."
+              "The region's seller fee at listing time, in basis points."
             ],
             "type": "u16"
           },
           {
-            "name": "investor_fee_bps",
+            "name": "buyer_fee_bps",
             "docs": [
-              "Investor fee at listing time, in basis points."
+              "The region's buyer fee at listing time, in basis points."
             ],
             "type": "u16"
           },
@@ -9825,7 +10846,7 @@
           {
             "name": "collected_fee_quote",
             "docs": [
-              "Investor fees collected so far, at `PRICE_DECIMALS`; caps the SPV",
+              "Buyer fees collected so far, at `PRICE_DECIMALS`; caps the SPV",
               "lawyer's charge without trusting the current share price."
             ],
             "type": "u64"
@@ -10099,13 +11120,20 @@
           {
             "name": "paid",
             "docs": [
-              "What the bidder's vault paid out in the mint's units, and the slice",
-              "that went to the treasury."
+              "What the bidder's vault paid out in the mint's units."
             ],
             "type": "u64"
           },
           {
-            "name": "fee",
+            "name": "fees",
+            "docs": [
+              "Combined seller and buyer fees; the operator's slice of them is",
+              "broken out, the treasury took the rest."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "operator_fee",
             "type": "u64"
           },
           {
@@ -10262,6 +11290,18 @@
               "zero again."
             ],
             "type": "u32"
+          },
+          {
+            "name": "mint_auth_bump",
+            "docs": [
+              "Bumps of the mint-authority PDA and of the property program's income",
+              "ledger, recorded at asset init so trades pin both at fixed cost."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "income_bump",
+            "type": "u8"
           },
           {
             "name": "bump",
@@ -10443,6 +11483,20 @@
             "type": "u16"
           },
           {
+            "name": "seller_fee_bps",
+            "docs": [
+              "Fee on the developer's sale proceeds, in basis points."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "buyer_fee_bps",
+            "docs": [
+              "Fee a buyer pays on top of the share price, in basis points."
+            ],
+            "type": "u16"
+          },
+          {
             "name": "location_count",
             "docs": [
               "Number of registered locations (each backed by a location deposit)."
@@ -10488,13 +11542,20 @@
           {
             "name": "paid",
             "docs": [
-              "What the buyer paid in the mint's units, and the slice of it that",
-              "went to the treasury."
+              "The buyer's full outlay in the mint's units: price plus buyer fee."
             ],
             "type": "u64"
           },
           {
-            "name": "fee",
+            "name": "fees",
+            "docs": [
+              "Combined seller and buyer fees; the operator's slice of them is",
+              "broken out, the treasury took the rest."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "operator_fee",
             "type": "u64"
           },
           {
@@ -10554,9 +11615,9 @@
       "docs": [
         "All roles recognised across the realXmarket protocol.",
         "",
-        "A role is app-level authorization, separate from KYC/compliance. Compliance",
-        "lives in [`AccessPermission`], and will eventually be driven by SAS",
-        "attestations rather than a manually set flag.",
+        "A role is app-level authorization, separate from KYC. Screening lives in",
+        "the per-wallet `Compliance` account, which the consuming programs check",
+        "alongside the role, so a role account tracks assignment only.",
         "",
         "Do not reorder the variants: the serialized `RoleAccount.role` stores the",
         "variant index, so a reorder reinterprets every existing assignment."
@@ -10588,7 +11649,7 @@
     {
       "name": "RoleAccount",
       "docs": [
-        "One (user, role) assignment together with its compliance status."
+        "One (user, role) assignment. Its existence is the grant."
       ],
       "type": {
         "kind": "struct",
@@ -10606,14 +11667,6 @@
             }
           },
           {
-            "name": "permission",
-            "type": {
-              "defined": {
-                "name": "AccessPermission"
-              }
-            }
-          },
-          {
             "name": "rent_payer",
             "docs": [
               "Who paid the account's rent (the assigning admin); every teardown",
@@ -10624,6 +11677,18 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SettledVaultClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing_id",
+            "type": "u64"
           }
         ]
       }
@@ -10731,10 +11796,17 @@
             "type": "u32"
           },
           {
-            "name": "fee_bps",
+            "name": "seller_fee_bps",
             "docs": [
-              "Marketplace fee at the moment of listing, so a config change can't",
-              "reprice the seller's proceeds under them."
+              "The region's seller fee at listing time, so a later fee change",
+              "can't reprice the seller's proceeds under them."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "buyer_fee_bps",
+            "docs": [
+              "The region's buyer fee at listing time, on top of the price."
             ],
             "type": "u16"
           },

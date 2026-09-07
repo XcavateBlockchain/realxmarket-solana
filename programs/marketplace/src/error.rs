@@ -114,9 +114,9 @@ pub enum MarketplaceError {
     /// Investor positions are still open, cancelled ones included.
     #[msg("Positions still open")]
     PositionsOutstanding,
-    /// The account is not the vault's associated account for this mint.
-    #[msg("Wrong vault account")]
-    WrongVaultAccount,
+    /// Not the associated token account of that owner for that mint.
+    #[msg("Wrong token account")]
+    WrongTokenAccount,
     /// The legal process deadline has passed.
     #[msg("Legal process has expired")]
     LegalProcessExpired,
@@ -247,4 +247,14 @@ pub enum MarketplaceError {
     /// A role or compliance account is not the one derived for that wallet.
     #[msg("Wrong registry account")]
     WrongRegistryAccount,
+    #[msg("Share mint does not match the property")]
+    WrongShareMint,
+    #[msg("Region record does not match the property's region")]
+    WrongRegionAccount,
+    #[msg("Not the share mint's authority PDA")]
+    WrongMintAuthority,
+    #[msg("Not the property's income ledger")]
+    WrongIncomeLedger,
+    #[msg("Not this program's CPI signer PDA")]
+    WrongCpiSigner,
 }

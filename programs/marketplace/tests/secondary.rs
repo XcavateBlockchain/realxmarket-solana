@@ -370,7 +370,7 @@ fn buy_needs_the_real_income_ledger() {
     let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
     let fake = Pubkey::new_unique();
     swap_account(&mut ix, property_income_pda(0), fake);
-    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongVaultAccount");
+    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongIncomeLedger");
 }
 
 // The operator fee follows the region record; none of its accounts can be
@@ -399,7 +399,7 @@ fn buy_pins_the_region_and_its_owner() {
     seed_region(&mut svm, 2, &intruder.pubkey());
     let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
     swap_account(&mut ix, region_pda(1), region_pda(2));
-    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongVaultAccount");
+    fails_with(&mut svm, ix, &buyer, &[&buyer], "WrongRegionAccount");
 
     // A wrong payee behind the real region fails the owner check.
     let mut ix = buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 5, u64::MAX);
@@ -475,7 +475,7 @@ fn send_needs_the_real_income_ledger() {
     let mut ix = send_shares_ix(&sender.pubkey(), &receiver.pubkey(), 0, 5);
     let fake = Pubkey::new_unique();
     swap_account(&mut ix, property_income_pda(0), fake);
-    fails_with(&mut svm, ix, sender, &[sender], "WrongVaultAccount");
+    fails_with(&mut svm, ix, sender, &[sender], "WrongIncomeLedger");
 }
 
 #[test]
@@ -490,5 +490,5 @@ fn send_rejects_a_decoy_share_account() {
         investor_share_ata(0, &sender.pubkey()),
         investor_share_ata(0, &receiver.pubkey()),
     );
-    fails_with(&mut svm, ix, sender, &[sender], "WrongVaultAccount");
+    fails_with(&mut svm, ix, sender, &[sender], "WrongTokenAccount");
 }

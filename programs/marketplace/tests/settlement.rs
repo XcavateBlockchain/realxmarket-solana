@@ -519,7 +519,7 @@ fn a_decoy_vault_account_is_rejected() {
         close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]);
     // First triple's vault slot follows the 7 struct accounts.
     ix.accounts[7].pubkey = payment_ata(&cranker.pubkey(), &tgbp_mint());
-    fails_with(&mut svm, ix, &cranker, &[&cranker], "WrongVaultAccount");
+    fails_with(&mut svm, ix, &cranker, &[&cranker], "WrongTokenAccount");
 }
 
 #[test]

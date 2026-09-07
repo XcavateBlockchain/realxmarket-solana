@@ -1133,8 +1133,10 @@
         {
           "name": "market_config",
           "docs": [
-            "The marketplace config; income arrives in its accepted payment mints,",
-            "which its mint guard already vetted."
+            "the handler. Typed here it would collide with this program's own",
+            "`Config` in the IDL, since both resolve to the same account name.",
+            "Income arrives in its accepted payment mints, which its mint guard",
+            "already vetted."
           ],
           "pda": {
             "seeds": [
@@ -4056,6 +4058,19 @@
       ]
     },
     {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
       "name": "GovVote",
       "discriminator": [
         159,
@@ -4144,19 +4159,6 @@
         85,
         78,
         78
-      ]
-    },
-    {
-      "name": "property::state::Config",
-      "discriminator": [
-        155,
-        12,
-        170,
-        224,
-        30,
-        250,
-        204,
-        130
       ]
     }
   ],
@@ -4728,30 +4730,6 @@
     }
   ],
   "types": [
-    {
-      "name": "AccessPermission",
-      "docs": [
-        "Compliance status for a (user, role) assignment, set by an admin after",
-        "off-chain KYC/AML. Only the marketplace's investor-fund calls (listing,",
-        "buying, offers, share transfers, lawyer case work) require this flag on",
-        "top of the role; every other instruction checks role possession alone.",
-        "Later it'll be driven by a SAS attestation instead of a manual toggle.",
-        "",
-        "Do not reorder the variants: the serialized `RoleAccount.permission`",
-        "stores the variant index, so a reorder flips every stored status."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Compliant"
-          },
-          {
-            "name": "Revoked"
-          }
-        ]
-      }
-    },
     {
       "name": "AgentCandidacy",
       "docs": [
@@ -5328,6 +5306,137 @@
       }
     },
     {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authority allowed to update parameters."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "docs": [
+              "Proposed replacement authority; takes over via `accept_authority`.",
+              "Two-step so a typo'd address can't brick parameter management."
+            ],
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "xcav_mint",
+            "docs": [
+              "The XCAV mint agent deposits are paid in."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Owner of the shared protocol treasury (a multisig on mainnet).",
+              "Slashes are paid to this key's token accounts; the program never",
+              "holds them."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_collector",
+            "docs": [
+              "The sponsor wallet that fronts account rent for holders. Sponsored",
+              "closes send their lamports here, not to the holder."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "agent_deposit",
+            "docs": [
+              "XCAV an agent locks per location they register in."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "agent_voting_time",
+            "docs": [
+              "Seconds an agent election stays open once the first candidacy claims."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "min_voting_quorum_bps",
+            "docs": [
+              "Share of a property's supply that must vote for an agent election to",
+              "be valid, in basis points."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "agent_notice_period",
+            "docs": [
+              "Seconds between an agent's resignation notice and the seat opening."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "proposal_voting_time",
+            "docs": [
+              "Seconds a spending proposal or challenge vote stays open."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "low_proposal",
+            "docs": [
+              "Requests at or under this approve without a vote, in quote units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "high_proposal",
+            "docs": [
+              "Requests at or over this need the high threshold, in quote units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "high_threshold_bps",
+            "docs": [
+              "Yes share of yes+no a high request must reach, in basis points."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "auto_approval_cooldown",
+            "docs": [
+              "Seconds between auto-approved requests on one property."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "challenge_deposit",
+            "docs": [
+              "XCAV a challenger stakes against the sitting agent."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "agent_slash_amount",
+            "docs": [
+              "XCAV slashed from the agent's location deposit per passed challenge."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "ConfigInitialized",
       "type": {
         "kind": "struct",
@@ -5879,6 +5988,18 @@
             "type": "u32"
           },
           {
+            "name": "mint_auth_bump",
+            "docs": [
+              "Bumps of the mint-authority PDA and of the property program's income",
+              "ledger, recorded at asset init so trades pin both at fixed cost."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "income_bump",
+            "type": "u8"
+          },
+          {
             "name": "bump",
             "type": "u8"
           }
@@ -5892,7 +6013,10 @@
         "streams never mix: the mints differ in decimals, so one shared",
         "accumulator would misprice payouts across them. The funds sit in the",
         "income vault's token accounts, apart from every other pot, so nothing",
-        "else can spend money already owed to holders."
+        "else can spend money already owed to holders.",
+        "",
+        "Deliberately has no close path: a finalized property lives forever, and",
+        "the carried dust is still owed to future distributions."
       ],
       "type": {
         "kind": "struct",
@@ -6249,9 +6373,9 @@
       "docs": [
         "All roles recognised across the realXmarket protocol.",
         "",
-        "A role is app-level authorization, separate from KYC/compliance. Compliance",
-        "lives in [`AccessPermission`], and will eventually be driven by SAS",
-        "attestations rather than a manually set flag.",
+        "A role is app-level authorization, separate from KYC. Screening lives in",
+        "the per-wallet `Compliance` account, which the consuming programs check",
+        "alongside the role, so a role account tracks assignment only.",
         "",
         "Do not reorder the variants: the serialized `RoleAccount.role` stores the",
         "variant index, so a reorder reinterprets every existing assignment."
@@ -6283,7 +6407,7 @@
     {
       "name": "RoleAccount",
       "docs": [
-        "One (user, role) assignment together with its compliance status."
+        "One (user, role) assignment. Its existence is the grant."
       ],
       "type": {
         "kind": "struct",
@@ -6297,14 +6421,6 @@
             "type": {
               "defined": {
                 "name": "Role"
-              }
-            }
-          },
-          {
-            "name": "permission",
-            "type": {
-              "defined": {
-                "name": "AccessPermission"
               }
             }
           },
@@ -6412,296 +6528,6 @@
           },
           {
             "name": "Abstain"
-          }
-        ]
-      }
-    },
-    {
-      "name": "marketplace::state::Config",
-      "docs": [
-        "Singleton config holding protocol parameters and the authority."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "authority",
-            "docs": [
-              "Authority allowed to update parameters."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "pending_authority",
-            "docs": [
-              "Proposed replacement authority; takes over via `accept_authority`.",
-              "Two-step so a typo'd address can't brick parameter management."
-            ],
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "xcav_mint",
-            "docs": [
-              "The XCAV mint listing and lawyer deposits are paid in."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "treasury",
-            "docs": [
-              "Owner of the shared protocol treasury (a multisig on mainnet). Fees are",
-              "paid to this key's token accounts; the program never holds them."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "rent_collector",
-            "docs": [
-              "The sponsor wallet that fronts account rent for investors. Every",
-              "position close sends its lamports here, not to the investor."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "accepted_payment_mints",
-            "docs": [
-              "Mints a property can be priced and paid in. Every entry must be a",
-              "same-value GBP stablecoin: prices convert between them by decimal",
-              "count alone, so adding a mint of different value would misprice every",
-              "open listing."
-            ],
-            "type": {
-              "vec": "pubkey"
-            }
-          },
-          {
-            "name": "listing_deposit",
-            "docs": [
-              "XCAV a developer locks to list a property."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lawyer_deposit",
-            "docs": [
-              "XCAV a lawyer locks to join the registry."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "min_property_shares",
-            "docs": [
-              "Fewest shares a property may be split into."
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "max_property_shares",
-            "docs": [
-              "Most shares a property may be split into."
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "marketplace_fee_bps",
-            "docs": [
-              "Protocol fee taken from the developer's proceeds, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "investor_fee_bps",
-            "docs": [
-              "Fee an investor pays on top of the share price, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "max_ownership_bps",
-            "docs": [
-              "Largest slice of a property one investor may hold, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "claiming_time",
-            "docs": [
-              "Seconds the claim window stays open once the SPV exists."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "legal_process_time",
-            "docs": [
-              "Seconds the legal process may run before it expires."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "lawyer_voting_time",
-            "docs": [
-              "Seconds the SPV lawyer election stays open once the first lawyer claims."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "min_voting_quorum_bps",
-            "docs": [
-              "Share of a property's supply that must vote for the SPV lawyer election",
-              "to be valid, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "next_listing_id",
-            "docs": [
-              "Monotonic id for the next listing."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "next_share_listing_id",
-            "docs": [
-              "Monotonic id for the next secondary share listing."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "property::state::Config",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "authority",
-            "docs": [
-              "Authority allowed to update parameters."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "pending_authority",
-            "docs": [
-              "Proposed replacement authority; takes over via `accept_authority`.",
-              "Two-step so a typo'd address can't brick parameter management."
-            ],
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "xcav_mint",
-            "docs": [
-              "The XCAV mint agent deposits are paid in."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "treasury",
-            "docs": [
-              "Owner of the shared protocol treasury (a multisig on mainnet).",
-              "Slashes are paid to this key's token accounts; the program never",
-              "holds them."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "rent_collector",
-            "docs": [
-              "The sponsor wallet that fronts account rent for holders. Sponsored",
-              "closes send their lamports here, not to the holder."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "agent_deposit",
-            "docs": [
-              "XCAV an agent locks per location they register in."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "agent_voting_time",
-            "docs": [
-              "Seconds an agent election stays open once the first candidacy claims."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "min_voting_quorum_bps",
-            "docs": [
-              "Share of a property's supply that must vote for an agent election to",
-              "be valid, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "agent_notice_period",
-            "docs": [
-              "Seconds between an agent's resignation notice and the seat opening."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "proposal_voting_time",
-            "docs": [
-              "Seconds a spending proposal or challenge vote stays open."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "low_proposal",
-            "docs": [
-              "Requests at or under this approve without a vote, in quote units."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "high_proposal",
-            "docs": [
-              "Requests at or over this need the high threshold, in quote units."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "high_threshold_bps",
-            "docs": [
-              "Yes share of yes+no a high request must reach, in basis points."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "auto_approval_cooldown",
-            "docs": [
-              "Seconds between auto-approved requests on one property."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "challenge_deposit",
-            "docs": [
-              "XCAV a challenger stakes against the sitting agent."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "agent_slash_amount",
-            "docs": [
-              "XCAV slashed from the agent's location deposit per passed challenge."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
           }
         ]
       }

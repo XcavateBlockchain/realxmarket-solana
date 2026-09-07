@@ -473,7 +473,7 @@ pub fn accept_offer_handler<'info>(
                 &ctx.accounts.payment_mint.key(),
                 &ctx.accounts.payment_token_program.key(),
             ),
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongTokenAccount
     );
     require!(
         ctx.accounts.seller_share_account.key()
@@ -482,7 +482,7 @@ pub fn accept_offer_handler<'info>(
                 &ctx.accounts.share_mint.key(),
                 &ctx.accounts.share_token_program.key(),
             ),
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongTokenAccount
     );
 
     // Everything here is unchecked so `try_accounts` fits the BPF stack.
@@ -519,18 +519,20 @@ pub fn accept_offer_handler<'info>(
     let mut property: Account<PropertyAsset> = Account::try_from(&ctx.accounts.property)?;
     require!(
         ctx.accounts.share_mint.key() == property.share_mint,
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongShareMint
     );
     let asset_bytes = asset_id.to_le_bytes();
     require_pda(
         &ctx.accounts.mint_auth.key(),
         &[MINT_AUTH_SEED, &asset_bytes, &[property.mint_auth_bump]],
         &crate::ID,
+        MarketplaceError::WrongMintAuthority,
     )?;
     require_pda(
         &ctx.accounts.income.key(),
         &[INCOME_SEED, &asset_bytes, &[property.income_bump]],
         &PROPERTY_PROGRAM,
+        MarketplaceError::WrongIncomeLedger,
     )?;
     let owned_after = (ctx.accounts.offeror_holding.amount as u64)
         .checked_add(amount as u64)
@@ -544,7 +546,7 @@ pub fn accept_offer_handler<'info>(
     let region: Account<regions::state::Region> = Account::try_from(&ctx.accounts.region)?;
     require!(
         region.region_id == property.region_id,
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongRegionAccount
     );
     require!(
         ctx.accounts.region_owner.key() == region.owner,
@@ -614,6 +616,7 @@ pub fn accept_offer_handler<'info>(
             &ctx.accounts.cpi_auth.key(),
             &[CPI_AUTH_SEED, &[cpi_auth_bump]],
             &crate::ID,
+            MarketplaceError::WrongCpiSigner,
         )?;
         settle_income(
             &ctx.accounts.property_program.to_account_info(),
@@ -947,7 +950,7 @@ fn refund_offer<'info>(
                 &payment_mint.key(),
                 &payment_token_program.key(),
             ),
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongTokenAccount
     );
     let mint_decimals = {
         let data = payment_mint.try_borrow_data()?;

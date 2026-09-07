@@ -91,7 +91,7 @@ pub struct WithdrawExpired<'info> {
             &listing_vault.key(),
             &payment_mint.key(),
             &payment_token_program.key(),
-        ) @ MarketplaceError::WrongVaultAccount,
+        ) @ MarketplaceError::WrongTokenAccount,
     )]
     pub listing_payment_account: UncheckedAccount<'info>,
 
@@ -115,7 +115,7 @@ pub struct WithdrawExpired<'info> {
             &property_vault.key(),
             &share_mint.key(),
             &share_token_program.key(),
-        ) @ MarketplaceError::WrongVaultAccount,
+        ) @ MarketplaceError::WrongTokenAccount,
     )]
     pub vault_share_account: UncheckedAccount<'info>,
 
@@ -127,7 +127,7 @@ pub struct WithdrawExpired<'info> {
             &investor.key(),
             &share_mint.key(),
             &share_token_program.key(),
-        ) @ MarketplaceError::WrongVaultAccount,
+        ) @ MarketplaceError::WrongTokenAccount,
     )]
     pub investor_share_account: UncheckedAccount<'info>,
 
@@ -623,7 +623,7 @@ pub fn withdraw_deposit_unsold_handler(
                     &ctx.accounts.xcav_mint.key(),
                     &ctx.accounts.token_program.key(),
                 ),
-            MarketplaceError::WrongVaultAccount
+            MarketplaceError::WrongTokenAccount
         );
         release_from_vault(
             &ctx.accounts.token_program.to_account_info(),

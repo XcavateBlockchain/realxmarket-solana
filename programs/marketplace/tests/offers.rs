@@ -131,11 +131,11 @@ fn make_offer_validates_the_bid() {
 // --- accepting ---
 
 // Accepting settles both sides in one instruction, so it is the heaviest
-// path in the program, and its PDA and ATA derivation costs vary with the
-// account keys — unlucky ones ran the 200k default out. Clients therefore
-// send an explicit budget (SECONDARY_TRADE_BUDGET, like every test here); the
-// pin sits above the observed wobble but well under that budget, so a
-// structural regression still fails loudly.
+// path in the program. Its PDAs are pinned by stored bumps, but the ATA
+// derivations still cost a key-dependent amount, and unlucky keys once ran
+// the 200k default out. Clients send SECONDARY_TRADE_BUDGET (as every test
+// here does); the pin sits above the observed wobble but well under that
+// budget, so a structural regression still fails loudly.
 const COMPUTE_BUDGET: u64 = 250_000;
 
 #[test]
@@ -739,7 +739,7 @@ fn a_decoy_offer_vault_is_rejected() {
         vault_ata,
         payment_ata(&seller.pubkey(), &tgbp_mint()),
     );
-    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongTokenAccount");
 }
 
 #[test]
@@ -752,7 +752,7 @@ fn accept_needs_the_real_income_ledger() {
     let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
     let fake = Pubkey::new_unique();
     swap_account(&mut ix, property_income_pda(0), fake);
-    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongIncomeLedger");
 }
 
 #[test]
@@ -764,5 +764,5 @@ fn accept_needs_the_real_mint_authority() {
 
     let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
     swap_account(&mut ix, mint_auth_pda(0), Pubkey::new_unique());
-    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongMintAuthority");
 }

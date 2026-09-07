@@ -83,10 +83,14 @@ pub(crate) fn settle_income<'info>(
 
 /// Pin an account to its PDA through a stored bump: one fixed-cost
 /// derivation, where `find_program_address` costs vary with the keys.
-pub(crate) fn require_pda(actual: &Pubkey, seeds: &[&[u8]], program: &Pubkey) -> Result<()> {
-    let expected = Pubkey::create_program_address(seeds, program)
-        .map_err(|_| MarketplaceError::WrongVaultAccount)?;
-    require_keys_eq!(*actual, expected, MarketplaceError::WrongVaultAccount);
+pub(crate) fn require_pda(
+    actual: &Pubkey,
+    seeds: &[&[u8]],
+    program: &Pubkey,
+    err: MarketplaceError,
+) -> Result<()> {
+    let expected = Pubkey::create_program_address(seeds, program).map_err(|_| err)?;
+    require_keys_eq!(*actual, expected, err);
     Ok(())
 }
 
@@ -465,7 +469,7 @@ pub struct BuyRelistedShares<'info> {
 
     /// CHECK: the share mint, pinned to the property's stored mint key (out
     /// of `try_accounts` for stack room).
-    #[account(address = property.share_mint @ MarketplaceError::WrongVaultAccount)]
+    #[account(address = property.share_mint @ MarketplaceError::WrongShareMint)]
     pub share_mint: UncheckedAccount<'info>,
 
     /// CHECK: the share mint's authority PDA; permanent delegate, signs the
@@ -557,19 +561,21 @@ pub fn buy_relisted_shares_handler<'info>(
                 &ctx.accounts.share_mint.key(),
                 &ctx.accounts.share_token_program.key(),
             ),
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongTokenAccount
     );
     let id_bytes = asset_id.to_le_bytes();
     require_pda(
         &ctx.accounts.income.key(),
         &[INCOME_SEED, &id_bytes, &[ctx.accounts.property.income_bump]],
         &PROPERTY_PROGRAM,
+        MarketplaceError::WrongIncomeLedger,
     )?;
     let mint_auth_bump = ctx.accounts.property.mint_auth_bump;
     require_pda(
         &ctx.accounts.mint_auth.key(),
         &[MINT_AUTH_SEED, &id_bytes, &[mint_auth_bump]],
         &crate::ID,
+        MarketplaceError::WrongMintAuthority,
     )?;
     // The fee split pays the region's current owner, read live like the
     // primary settlement does. `try_from` proves the regions program owns
@@ -578,7 +584,7 @@ pub fn buy_relisted_shares_handler<'info>(
     let region: Account<regions::state::Region> = Account::try_from(&ctx.accounts.region)?;
     require!(
         region.region_id == ctx.accounts.property.region_id,
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongRegionAccount
     );
     require!(
         ctx.accounts.region_owner.key() == region.owner,
@@ -660,6 +666,7 @@ pub fn buy_relisted_shares_handler<'info>(
             &ctx.accounts.cpi_auth.key(),
             &[CPI_AUTH_SEED, &[cpi_auth_bump]],
             &crate::ID,
+            MarketplaceError::WrongCpiSigner,
         )?;
         settle_income(
             &ctx.accounts.property_program.to_account_info(),
@@ -896,7 +903,7 @@ pub struct SendShares<'info> {
     pub receiver_holding: Box<Account<'info, ShareHolding>>,
 
     /// CHECK: the share mint, pinned to the key the property recorded.
-    #[account(address = property.share_mint @ MarketplaceError::WrongVaultAccount)]
+    #[account(address = property.share_mint @ MarketplaceError::WrongShareMint)]
     pub share_mint: UncheckedAccount<'info>,
 
     /// CHECK: the share mint's authority PDA; permanent delegate.
@@ -970,7 +977,7 @@ pub fn send_property_shares_handler<'info>(
                 &ctx.accounts.share_mint.key(),
                 &ctx.accounts.share_token_program.key(),
             ),
-        MarketplaceError::WrongVaultAccount
+        MarketplaceError::WrongTokenAccount
     );
     require_pda(
         &ctx.accounts.income.key(),
@@ -980,6 +987,7 @@ pub fn send_property_shares_handler<'info>(
             &[ctx.accounts.property.income_bump],
         ],
         &PROPERTY_PROGRAM,
+        MarketplaceError::WrongIncomeLedger,
     )?;
 
     let owned_after = (ctx.accounts.receiver_holding.amount as u64)

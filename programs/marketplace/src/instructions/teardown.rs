@@ -153,7 +153,7 @@ pub fn close_dead_listing_handler<'info>(
                     &share_mint.key(),
                     &ctx.accounts.share_token_program.key(),
                 ),
-            MarketplaceError::WrongVaultAccount
+            MarketplaceError::WrongTokenAccount
         );
 
         // With no holders left, the vault carries the whole supply; burn it
@@ -324,7 +324,7 @@ fn close_vault_payment_accounts<'info>(
                     expected_mint,
                     token_program,
                 ),
-            MarketplaceError::WrongVaultAccount
+            MarketplaceError::WrongTokenAccount
         );
         // Never paid with: the account was never created.
         if vault_account.data_is_empty() {
@@ -345,7 +345,7 @@ fn close_vault_payment_accounts<'info>(
                         expected_mint,
                         token_program,
                     ),
-                MarketplaceError::WrongVaultAccount
+                MarketplaceError::WrongTokenAccount
             );
             let decimals = {
                 let data = mint.try_borrow_data()?;
