@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch supersedes the running job.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# GitHub's plain runner shell has no pipefail; the build step pipes into tee.
+defaults:
+  run:
+    shell: bash
+
+env:
+  SOLANA_VERSION: 3.1.10
+  ANCHOR_VERSION: 1.0.0
+  NO_DNA: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned to match rust-toolchain.toml.
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      # result_large_err is inherent to Anchor's Result type.
+      - run: cargo clippy --workspace --all-targets -- -D warnings -A clippy::result_large_err
+
+  build-and-test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache Solana and Anchor
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/solana/install
+            ~/.cache/solana
+            ~/.cargo/bin/anchor
+          key: toolchain-solana-${{ env.SOLANA_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}
+
+      - name: Install Solana
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+
+      - name: Install Anchor
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev libssl-dev
+          cargo install --git https://github.com/coral-xyz/anchor --tag v${ANCHOR_VERSION} anchor-cli --locked
+
+      - name: Add Solana to PATH
+        run: echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Build programs
+        run: anchor build --ignore-keys 2>&1 | tee build.log
+
+      # The SBF stack diagnostic has two phrasings and neither fails the
+      # build on its own; an overflowing frame ships silently otherwise.
+      - name: Stack frame check
+        run: |
+          if grep -qE 'overwrites values in the frame|Stack offset' build.log; then
+            echo "::error::a function overflows the SBF stack frame"
+            grep -E 'overwrites values in the frame|Stack offset' build.log
+            exit 1
+          fi
+
+      # LiteSVM tests load the binaries just built from target/deploy.
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Upload IDLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: idls
+          path: target/idl/*.json
+          if-no-files-found: error
+
+      - name: Upload programs
+        uses: actions/upload-artifact@v4
+        with:
+          name: programs
+          path: target/deploy/*.so
+          if-no-files-found: error
