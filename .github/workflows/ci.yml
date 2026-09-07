@@ -20,7 +20,7 @@ defaults:
 
 env:
   SOLANA_VERSION: 3.1.10
-  ANCHOR_VERSION: 1.0.0
+  ANCHOR_VERSION: 1.1.2
   NO_DNA: 1
   CARGO_TERM_COLOR: always
 
@@ -37,7 +37,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       # result_large_err is inherent to Anchor's Result type.
-      - run: cargo clippy --workspace --all-targets -- -D warnings -A clippy::result_large_err
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings -A clippy::result_large_err
 
   build-and-test:
     name: build + test
@@ -85,7 +85,7 @@ jobs:
 
       # LiteSVM tests load the binaries just built from target/deploy.
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Upload IDLs
         uses: actions/upload-artifact@v4
