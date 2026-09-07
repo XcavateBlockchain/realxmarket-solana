@@ -754,3 +754,15 @@ fn accept_needs_the_real_income_ledger() {
     swap_account(&mut ix, property_income_pda(0), fake);
     fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
 }
+
+#[test]
+fn accept_needs_the_real_mint_authority() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+
+    let mut ix = accept_offer_ix(&seller.pubkey(), 0, 0, &offeror.pubkey(), 0, tgbp_mint());
+    swap_account(&mut ix, mint_auth_pda(0), Pubkey::new_unique());
+    fails_with_budget(&mut svm, ix, seller, &[seller], "WrongVaultAccount");
+}
