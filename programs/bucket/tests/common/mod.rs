@@ -10,8 +10,8 @@
 pub use anchor_lang::prelude::Pubkey;
 pub use anchor_lang::AccountDeserialize;
 pub use bucket::state::{
-    Bucket, BucketMetadata, Config, Namespace, NamespaceMetadata, Property, MAX_NAME_LEN,
-    MAX_PROPERTIES,
+    Bucket, BucketMetadata, Config, Message, MessageInput, Namespace, NamespaceMetadata, Property,
+    Tag, MAX_NAME_LEN, MAX_PROPERTIES, MAX_REFERENCE_LEN, MAX_TAG_LEN,
 };
 pub use litesvm::LiteSVM;
 pub use solana_keypair::Keypair;
@@ -20,8 +20,8 @@ pub use solana_signer::Signer;
 use anchor_lang::solana_program::instruction::Instruction;
 use anchor_lang::{InstructionData, ToAccountMetas};
 use bucket::{
-    ADMIN_SEED, BUCKET_SEED, CONFIG_SEED, CONTRIBUTOR_SEED, MANAGER_SEED, NAMESPACE_SEED,
-    VIEWER_SEED,
+    tag_seed, ADMIN_SEED, BUCKET_SEED, CONFIG_SEED, CONTRIBUTOR_SEED, MANAGER_SEED, MESSAGE_SEED,
+    NAMESPACE_SEED, TAG_SEED, VIEWER_SEED,
 };
 use litesvm::types::{FailedTransactionMetadata, TransactionMetadata};
 use solana_message::{Message as TxMessage, VersionedMessage};
@@ -29,6 +29,8 @@ use solana_transaction::versioned::VersionedTransaction;
 
 pub const SYS: Pubkey = anchor_lang::system_program::ID;
 pub const KEY: [u8; 32] = [7; 32];
+pub const KEY2: [u8; 32] = [8; 32];
+pub const HASH: [u8; 32] = [9; 32];
 
 // --- PDAs ---
 
@@ -68,6 +70,20 @@ pub fn contributor_pda(bucket_id: u64, wallet: &Pubkey) -> Pubkey {
 pub fn viewer_pda(bucket_id: u64, key: &[u8; 32]) -> Pubkey {
     Pubkey::find_program_address(&[VIEWER_SEED, &bucket_id.to_le_bytes(), key], &pid()).0
 }
+pub fn tag_pda(bucket_id: u64, tag: &str) -> Pubkey {
+    Pubkey::find_program_address(
+        &[TAG_SEED, &bucket_id.to_le_bytes(), &tag_seed(tag)],
+        &pid(),
+    )
+    .0
+}
+pub fn message_pda(bucket_id: u64, id: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[MESSAGE_SEED, &bucket_id.to_le_bytes(), &id.to_le_bytes()],
+        &pid(),
+    )
+    .0
+}
 
 // --- metadata ---
 
@@ -91,6 +107,17 @@ pub fn bucket_meta(name: &str) -> BucketMetadata {
         name: name.into(),
         category: "legal".into(),
         properties: vec![],
+    }
+}
+
+pub fn msg_input(reference: &str, tag: Option<&str>) -> MessageInput {
+    MessageInput {
+        reference: reference.into(),
+        tag: tag.map(Into::into),
+        description: "Title deed".into(),
+        content_type: "application/pdf".into(),
+        content_hash: HASH,
+        properties: vec![prop("pages", "3")],
     }
 }
 
@@ -324,6 +351,70 @@ pub fn remove_viewer_ix(
     )
 }
 
+fn admin_on_bucket(admin: &Pubkey, bucket_id: u64) -> bucket::accounts::AdminOnBucket {
+    bucket::accounts::AdminOnBucket {
+        admin_signer: *admin,
+        bucket: bucket_pda(bucket_id),
+        admin: admin_pda(bucket_id, admin),
+    }
+}
+
+pub fn pause_ix(admin: &Pubkey, bucket_id: u64) -> Instruction {
+    ix(
+        bucket::instruction::PauseWriting {}.data(),
+        admin_on_bucket(admin, bucket_id),
+    )
+}
+
+pub fn resume_ix(admin: &Pubkey, bucket_id: u64, encryption_key: [u8; 32]) -> Instruction {
+    ix(
+        bucket::instruction::ResumeWriting { encryption_key }.data(),
+        admin_on_bucket(admin, bucket_id),
+    )
+}
+
+pub fn rotate_ix(admin: &Pubkey, bucket_id: u64, encryption_key: [u8; 32]) -> Instruction {
+    ix(
+        bucket::instruction::RotateKey { encryption_key }.data(),
+        admin_on_bucket(admin, bucket_id),
+    )
+}
+
+pub fn create_tag_ix(admin: &Pubkey, bucket_id: u64, tag: &str) -> Instruction {
+    ix(
+        bucket::instruction::CreateTag { tag: tag.into() }.data(),
+        bucket::accounts::CreateTag {
+            admin_signer: *admin,
+            bucket: bucket_pda(bucket_id),
+            admin: admin_pda(bucket_id, admin),
+            tag_account: tag_pda(bucket_id, tag),
+            system_program: SYS,
+        },
+    )
+}
+
+/// `tag` is the tag account to pass, which tests may deliberately mismatch
+/// against `input.tag`.
+pub fn write_ix(
+    contributor: &Pubkey,
+    bucket_id: u64,
+    message_id: u64,
+    input: MessageInput,
+    tag: Option<Pubkey>,
+) -> Instruction {
+    ix(
+        bucket::instruction::Write { input }.data(),
+        bucket::accounts::WriteMessage {
+            contributor_signer: *contributor,
+            bucket: bucket_pda(bucket_id),
+            contributor: contributor_pda(bucket_id, contributor),
+            tag,
+            message: message_pda(bucket_id, message_id),
+            system_program: SYS,
+        },
+    )
+}
+
 // --- send / assert ---
 
 pub fn process(
@@ -389,6 +480,12 @@ pub fn namespace_of(svm: &LiteSVM, id: u64) -> Namespace {
 pub fn bucket_of(svm: &LiteSVM, id: u64) -> Bucket {
     read(svm, &bucket_pda(id))
 }
+pub fn tag_of(svm: &LiteSVM, bucket_id: u64, tag: &str) -> Tag {
+    read(svm, &tag_pda(bucket_id, tag))
+}
+pub fn message_of(svm: &LiteSVM, bucket_id: u64, id: u64) -> Message {
+    read(svm, &message_pda(bucket_id, id))
+}
 
 // --- drivers ---
 
@@ -436,5 +533,24 @@ pub fn bucket(svm: &mut LiteSVM, manager: &Keypair, namespace_id: u64, admin: &K
         add_admin_ix(&manager.pubkey(), namespace_id, id, &admin.pubkey()),
         manager,
     );
+    id
+}
+
+/// A bucket with `admin` seated, `writer` as contributor and `KEY` set;
+/// returns its id.
+pub fn open_bucket(
+    svm: &mut LiteSVM,
+    manager: &Keypair,
+    namespace_id: u64,
+    admin: &Keypair,
+    writer: &Keypair,
+) -> u64 {
+    let id = bucket(svm, manager, namespace_id, admin);
+    ok(
+        svm,
+        add_contributor_ix(&admin.pubkey(), id, &writer.pubkey()),
+        admin,
+    );
+    ok(svm, resume_ix(&admin.pubkey(), id, KEY), admin);
     id
 }

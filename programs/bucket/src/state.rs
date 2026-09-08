@@ -243,12 +243,17 @@ pub struct Tag {
 }
 
 impl Tag {
+    pub fn validate(tag: &str) -> Result<()> {
+        check_len(tag, MAX_TAG_LEN)
+    }
+
     pub fn space(tag: &str) -> usize {
         8 + 8 + string_space(tag) + 8 + 32 + 1
     }
 }
 
 /// A reference to an encrypted document, with its descriptive metadata.
+/// The contributor paid its rent.
 #[account]
 pub struct Message {
     pub bucket_id: u64,
@@ -261,7 +266,6 @@ pub struct Message {
     pub properties: Vec<Property>,
     pub created_at: i64,
     pub contributor: Pubkey,
-    pub rent_payer: Pubkey,
     pub bump: u8,
 }
 
@@ -277,7 +281,6 @@ impl Message {
             + 32
             + properties_space(&m.properties)
             + 8
-            + 32
             + 32
             + 1
     }

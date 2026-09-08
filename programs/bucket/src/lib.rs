@@ -94,4 +94,30 @@ pub mod bucket {
     pub fn remove_viewer(ctx: Context<RemoveViewer>, viewer_key: [u8; 32]) -> Result<()> {
         members::remove_viewer_handler(ctx, viewer_key)
     }
+
+    /// Lock the bucket; nothing can be written until a key is set. Admin-only.
+    pub fn pause_writing(ctx: Context<AdminOnBucket>) -> Result<()> {
+        buckets::pause_writing_handler(ctx)
+    }
+
+    /// Set the bucket's key and open it for writing. Admin-only.
+    pub fn resume_writing(ctx: Context<AdminOnBucket>, encryption_key: [u8; 32]) -> Result<()> {
+        buckets::resume_writing_handler(ctx, encryption_key)
+    }
+
+    /// Replace the key of an open bucket. Admin-only; fails while locked.
+    pub fn rotate_key(ctx: Context<AdminOnBucket>, encryption_key: [u8; 32]) -> Result<()> {
+        buckets::rotate_key_handler(ctx, encryption_key)
+    }
+
+    /// Create a tag messages in the bucket may carry. Admin-only.
+    pub fn create_tag(ctx: Context<CreateTag>, tag: String) -> Result<()> {
+        messages::create_tag_handler(ctx, tag)
+    }
+
+    /// Write a message. Contributor-only; the bucket must be open and the
+    /// tag, if the message names one, must exist.
+    pub fn write(ctx: Context<WriteMessage>, input: MessageInput) -> Result<()> {
+        messages::write_handler(ctx, input)
+    }
 }
