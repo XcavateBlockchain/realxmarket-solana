@@ -40,4 +40,58 @@ pub mod bucket {
     pub fn accept_authority(ctx: Context<AcceptAuthority>) -> Result<()> {
         initialize::accept_authority_handler(ctx)
     }
+
+    /// Create a namespace; the signer becomes its first manager.
+    pub fn create_namespace(
+        ctx: Context<CreateNamespace>,
+        metadata: NamespaceMetadata,
+    ) -> Result<()> {
+        namespaces::create_namespace_handler(ctx, metadata)
+    }
+
+    /// Seat another manager on a namespace. Manager-only.
+    pub fn add_manager(ctx: Context<AddManager>) -> Result<()> {
+        members::add_manager_handler(ctx)
+    }
+
+    /// Unseat a manager. Manager-only; the last manager cannot be removed.
+    pub fn remove_manager(ctx: Context<RemoveManager>) -> Result<()> {
+        members::remove_manager_handler(ctx)
+    }
+
+    /// Create a bucket under a namespace. Manager-only. A new bucket is
+    /// locked until an admin sets its key.
+    pub fn create_bucket(ctx: Context<CreateBucket>, metadata: BucketMetadata) -> Result<()> {
+        buckets::create_bucket_handler(ctx, metadata)
+    }
+
+    /// Seat a bucket admin. Manager-only.
+    pub fn add_admin(ctx: Context<AddAdmin>) -> Result<()> {
+        members::add_admin_handler(ctx)
+    }
+
+    /// Unseat a bucket admin. Manager-only.
+    pub fn remove_admin(ctx: Context<RemoveAdmin>) -> Result<()> {
+        members::remove_admin_handler(ctx)
+    }
+
+    /// Seat a contributor. Admin-only.
+    pub fn add_contributor(ctx: Context<AddContributor>) -> Result<()> {
+        members::add_contributor_handler(ctx)
+    }
+
+    /// Unseat a contributor. Admin-only.
+    pub fn remove_contributor(ctx: Context<RemoveContributor>) -> Result<()> {
+        members::remove_contributor_handler(ctx)
+    }
+
+    /// List a viewer's X25519 public key. Admin-only.
+    pub fn add_viewer(ctx: Context<AddViewer>, viewer_key: [u8; 32]) -> Result<()> {
+        members::add_viewer_handler(ctx, viewer_key)
+    }
+
+    /// Delist a viewer. Admin-only.
+    pub fn remove_viewer(ctx: Context<RemoveViewer>, viewer_key: [u8; 32]) -> Result<()> {
+        members::remove_viewer_handler(ctx, viewer_key)
+    }
 }
