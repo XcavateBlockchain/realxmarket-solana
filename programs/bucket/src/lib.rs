@@ -120,4 +120,34 @@ pub mod bucket {
     pub fn write(ctx: Context<WriteMessage>, input: MessageInput) -> Result<()> {
         messages::write_handler(ctx, input)
     }
+
+    /// Seat a manager without being one. Authority-only.
+    pub fn force_add_manager(ctx: Context<ForceAddManager>) -> Result<()> {
+        force::force_add_manager_handler(ctx)
+    }
+
+    /// Unseat any manager, the last one included. Authority-only.
+    pub fn force_remove_manager(ctx: Context<ForceRemoveManager>) -> Result<()> {
+        force::force_remove_manager_handler(ctx)
+    }
+
+    /// Remove a message and refund its contributor. Authority-only.
+    pub fn force_remove_message(ctx: Context<ForceRemoveMessage>) -> Result<()> {
+        force::force_remove_message_handler(ctx)
+    }
+
+    /// Remove a tag no message carries. Authority-only.
+    pub fn force_remove_tag(ctx: Context<ForceRemoveTag>) -> Result<()> {
+        force::force_remove_tag_handler(ctx)
+    }
+
+    /// Remove an emptied bucket. Authority-only.
+    pub fn force_remove_bucket(ctx: Context<ForceRemoveBucket>) -> Result<()> {
+        force::force_remove_bucket_handler(ctx)
+    }
+
+    /// Remove an emptied namespace. Authority-only.
+    pub fn force_remove_namespace(ctx: Context<ForceRemoveNamespace>) -> Result<()> {
+        force::force_remove_namespace_handler(ctx)
+    }
 }

@@ -415,6 +415,114 @@ pub fn write_ix(
     )
 }
 
+pub fn force_add_manager_ix(
+    authority: &Pubkey,
+    namespace_id: u64,
+    new_manager: &Pubkey,
+) -> Instruction {
+    ix(
+        bucket::instruction::ForceAddManager {}.data(),
+        bucket::accounts::ForceAddManager {
+            authority: *authority,
+            config: config_pda(),
+            namespace: namespace_pda(namespace_id),
+            new_manager: *new_manager,
+            new_manager_account: manager_pda(namespace_id, new_manager),
+            system_program: SYS,
+        },
+    )
+}
+
+pub fn force_remove_manager_ix(
+    authority: &Pubkey,
+    namespace_id: u64,
+    target: &Pubkey,
+    rent_payer: &Pubkey,
+) -> Instruction {
+    ix(
+        bucket::instruction::ForceRemoveManager {}.data(),
+        bucket::accounts::ForceRemoveManager {
+            authority: *authority,
+            config: config_pda(),
+            namespace: namespace_pda(namespace_id),
+            rent_payer: *rent_payer,
+            target: manager_pda(namespace_id, target),
+        },
+    )
+}
+
+pub fn force_remove_message_ix(
+    authority: &Pubkey,
+    bucket_id: u64,
+    message_id: u64,
+    rent_payer: &Pubkey,
+    tag: Option<Pubkey>,
+) -> Instruction {
+    ix(
+        bucket::instruction::ForceRemoveMessage {}.data(),
+        bucket::accounts::ForceRemoveMessage {
+            authority: *authority,
+            config: config_pda(),
+            bucket: bucket_pda(bucket_id),
+            rent_payer: *rent_payer,
+            tag,
+            message: message_pda(bucket_id, message_id),
+        },
+    )
+}
+
+pub fn force_remove_tag_ix(
+    authority: &Pubkey,
+    bucket_id: u64,
+    tag: &str,
+    rent_payer: &Pubkey,
+) -> Instruction {
+    ix(
+        bucket::instruction::ForceRemoveTag {}.data(),
+        bucket::accounts::ForceRemoveTag {
+            authority: *authority,
+            config: config_pda(),
+            bucket: bucket_pda(bucket_id),
+            rent_payer: *rent_payer,
+            tag_account: tag_pda(bucket_id, tag),
+        },
+    )
+}
+
+pub fn force_remove_bucket_ix(
+    authority: &Pubkey,
+    namespace_id: u64,
+    bucket_id: u64,
+    rent_payer: &Pubkey,
+) -> Instruction {
+    ix(
+        bucket::instruction::ForceRemoveBucket {}.data(),
+        bucket::accounts::ForceRemoveBucket {
+            authority: *authority,
+            config: config_pda(),
+            namespace: namespace_pda(namespace_id),
+            rent_payer: *rent_payer,
+            bucket: bucket_pda(bucket_id),
+        },
+    )
+}
+
+pub fn force_remove_namespace_ix(
+    authority: &Pubkey,
+    namespace_id: u64,
+    rent_payer: &Pubkey,
+) -> Instruction {
+    ix(
+        bucket::instruction::ForceRemoveNamespace {}.data(),
+        bucket::accounts::ForceRemoveNamespace {
+            authority: *authority,
+            config: config_pda(),
+            rent_payer: *rent_payer,
+            namespace: namespace_pda(namespace_id),
+        },
+    )
+}
+
 // --- send / assert ---
 
 pub fn process(

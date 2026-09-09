@@ -33,7 +33,7 @@ done
 pubkey() { solana-keygen pubkey "$KEYS/$1.json"; }
 
 # --- SOL --------------------------------------------------------------------
-# The four program deploys dominate (~2.5MB of binaries, rent scales with
+# The five program deploys dominate (~3.9MB of binaries, rent scales with
 # size); actors just need fees and account rent.
 TARGET_SOL=30
 balance() { solana balance -u "$RPC_URL" "$(pubkey authority)" | cut -d' ' -f1; }
@@ -159,6 +159,7 @@ deploy_program xcavate_whitelist
 deploy_program regions
 deploy_program marketplace
 deploy_program property
+deploy_program bucket
 
 # --- protocol bootstrap -----------------------------------------------------
 cargo run -q -p xcavate-setup -- --url "$RPC_URL"

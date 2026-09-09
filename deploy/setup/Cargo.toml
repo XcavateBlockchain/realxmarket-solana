@@ -15,6 +15,7 @@ xcavate-whitelist = { path = "../../programs/xcavate-whitelist", features = ["cp
 regions = { path = "../../programs/regions", features = ["cpi", "no-entrypoint"] }
 marketplace = { path = "../../programs/marketplace", features = ["cpi", "no-entrypoint"] }
 property = { path = "../../programs/property", features = ["cpi", "no-entrypoint"] }
+bucket = { path = "../../programs/bucket", features = ["cpi", "no-entrypoint"] }
 solana-rpc-client = "3.0"
 solana-commitment-config = "3.0"
 solana-message = { workspace = true }
