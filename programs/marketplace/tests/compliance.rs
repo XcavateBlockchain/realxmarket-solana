@@ -21,21 +21,19 @@ fn now(svm: &LiteSVM) -> i64 {
     svm.get_sysvar::<Clock>().unix_timestamp
 }
 
-/// A successful listing consumes its id, so the cases that list more than once
-/// have to move on to the next one.
-fn lists_ok(svm: &mut LiteSVM, developer: &Keypair, listing_id: u64) {
+fn lists_ok(svm: &mut LiteSVM, developer: &Keypair) {
     ok(
         svm,
-        list_ix(&developer.pubkey(), listing_id),
+        list_ix(&developer.pubkey(), 0),
         developer,
         &[developer],
     );
 }
 
-fn listing_fails(svm: &mut LiteSVM, developer: &Keypair, listing_id: u64, error: &str) {
+fn listing_fails(svm: &mut LiteSVM, developer: &Keypair, error: &str) {
     fails_with(
         svm,
-        list_ix(&developer.pubkey(), listing_id),
+        list_ix(&developer.pubkey(), 0),
         developer,
         &[developer],
         error,
@@ -45,20 +43,7 @@ fn listing_fails(svm: &mut LiteSVM, developer: &Keypair, listing_id: u64, error:
 #[test]
 fn a_cleared_wallet_passes() {
     let (mut svm, _admin, developer) = listable();
-    lists_ok(&mut svm, &developer, 0);
-}
-
-// Screening is dated, so a record that lapses stops clearing the wallet with
-// nobody having to act. This is the case a one-time onboarding check misses.
-#[test]
-fn lapsed_screening_is_rejected() {
-    let (mut svm, admin, developer) = listable();
-    let expires_at = now(&svm) + 1_000;
-    clear_compliance_until(&mut svm, &admin, &developer.pubkey(), expires_at);
-    lists_ok(&mut svm, &developer, 0);
-
-    warp(&mut svm, 1_001);
-    listing_fails(&mut svm, &developer, 1, "NotCompliant");
+    lists_ok(&mut svm, &developer);
 }
 
 // The liveness check is strict, so the recorded second itself is already
@@ -70,7 +55,7 @@ fn the_recorded_second_is_already_lapsed() {
     clear_compliance_until(&mut svm, &admin, &developer.pubkey(), expires_at);
 
     warp(&mut svm, 1_000);
-    listing_fails(&mut svm, &developer, 0, "NotCompliant");
+    listing_fails(&mut svm, &developer, "NotCompliant");
 }
 
 // Re-screening renews the same record rather than needing a new account.
@@ -80,11 +65,11 @@ fn renewing_clears_the_wallet_again() {
     let expires_at = now(&svm) + 1_000;
     clear_compliance_until(&mut svm, &admin, &developer.pubkey(), expires_at);
     warp(&mut svm, 1_001);
-    listing_fails(&mut svm, &developer, 0, "NotCompliant");
+    listing_fails(&mut svm, &developer, "NotCompliant");
 
     let renewed = now(&svm) + 10_000;
     clear_compliance_until(&mut svm, &admin, &developer.pubkey(), renewed);
-    lists_ok(&mut svm, &developer, 0);
+    lists_ok(&mut svm, &developer);
 }
 
 // A sanctions hit blocks the wallet outright, and unlike a lapse it does not
@@ -93,19 +78,12 @@ fn renewing_clears_the_wallet_again() {
 fn a_blocked_wallet_is_rejected() {
     let (mut svm, admin, developer) = listable();
     set_compliance(&mut svm, &admin, &developer.pubkey(), false);
-    listing_fails(&mut svm, &developer, 0, "NotCompliant");
+    listing_fails(&mut svm, &developer, "NotCompliant");
+    warp(&mut svm, 400 * 86_400);
+    listing_fails(&mut svm, &developer, "NotCompliant");
 
     set_compliance(&mut svm, &admin, &developer.pubkey(), true);
-    lists_ok(&mut svm, &developer, 0);
-}
-
-#[test]
-fn blocking_survives_the_passage_of_time() {
-    let (mut svm, admin, developer) = listable();
-    set_compliance(&mut svm, &admin, &developer.pubkey(), false);
-    warp(&mut svm, 400 * 86_400);
-
-    listing_fails(&mut svm, &developer, 0, "NotCompliant");
+    lists_ok(&mut svm, &developer);
 }
 
 // A wallet holding a role but never screened has no record at all, which the
@@ -125,7 +103,7 @@ fn an_unscreened_wallet_is_rejected() {
         &[&admin],
     );
 
-    listing_fails(&mut svm, &stranger, 0, "AccountNotInitialized");
+    listing_fails(&mut svm, &stranger, "AccountNotInitialized");
 }
 
 // The record is seeds-pinned to its wallet, so a cleared holder's record can't

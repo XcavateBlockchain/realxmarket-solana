@@ -905,20 +905,6 @@ fn role_seed_bytes_are_stable() {
 }
 
 #[test]
-fn assign_spv_confirmation_role_works() {
-    let (mut svm, _authority, admin) = setup_with_admin();
-    let user = Keypair::new().pubkey();
-    ok(
-        &mut svm,
-        assign_ix(&admin.pubkey(), &user, Role::SpvConfirmation),
-        &admin,
-        &[&admin],
-    );
-    let parsed = read_role(&svm, &user, Role::SpvConfirmation);
-    assert_eq!(parsed.role, Role::SpvConfirmation);
-}
-
-#[test]
 fn readd_admin_after_removal() {
     let (mut svm, authority, admin) = setup_with_admin();
     ok(

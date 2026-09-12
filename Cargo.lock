@@ -860,6 +860,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "litesvm",
+ "proptest",
  "solana-keypair",
  "solana-message",
  "solana-sha256-hasher",

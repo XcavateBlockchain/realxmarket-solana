@@ -10,8 +10,9 @@
 pub use anchor_lang::prelude::Pubkey;
 pub use anchor_lang::AccountDeserialize;
 pub use bucket::state::{
-    Bucket, BucketMetadata, Config, Message, MessageInput, Namespace, NamespaceMetadata, Property,
-    Tag, MAX_NAME_LEN, MAX_PROPERTIES, MAX_REFERENCE_LEN, MAX_TAG_LEN,
+    Admin, Bucket, BucketMetadata, Config, Contributor, Manager, Message, MessageInput, Namespace,
+    NamespaceMetadata, Property, Tag, Viewer, MAX_NAME_LEN, MAX_PROPERTIES, MAX_REFERENCE_LEN,
+    MAX_TAG_LEN,
 };
 pub use litesvm::LiteSVM;
 pub use solana_keypair::Keypair;
@@ -587,6 +588,18 @@ pub fn namespace_of(svm: &LiteSVM, id: u64) -> Namespace {
 }
 pub fn bucket_of(svm: &LiteSVM, id: u64) -> Bucket {
     read(svm, &bucket_pda(id))
+}
+pub fn manager_of(svm: &LiteSVM, namespace_id: u64, wallet: &Pubkey) -> Manager {
+    read(svm, &manager_pda(namespace_id, wallet))
+}
+pub fn admin_of(svm: &LiteSVM, bucket_id: u64, wallet: &Pubkey) -> Admin {
+    read(svm, &admin_pda(bucket_id, wallet))
+}
+pub fn contributor_of(svm: &LiteSVM, bucket_id: u64, wallet: &Pubkey) -> Contributor {
+    read(svm, &contributor_pda(bucket_id, wallet))
+}
+pub fn viewer_of(svm: &LiteSVM, bucket_id: u64, key: &[u8; 32]) -> Viewer {
+    read(svm, &viewer_pda(bucket_id, key))
 }
 pub fn tag_of(svm: &LiteSVM, bucket_id: u64, tag: &str) -> Tag {
     read(svm, &tag_pda(bucket_id, tag))
