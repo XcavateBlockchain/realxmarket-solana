@@ -71,6 +71,29 @@ fn propose_accepts_any_nonzero_id_and_rejects_zero() {
     assert_eq!(region_state_of(&svm, 999).region_id, 999);
 }
 
+// The bond is the configured share of supply, so doubling the share doubles
+// the bond the next proposal locks.
+#[test]
+fn bond_follows_the_configured_share() {
+    let (mut svm, operator, authority) = setup();
+    let mut params = default_params();
+    params.operator_bond_bps = 20;
+    ok(
+        &mut svm,
+        update_config_ix(&authority.pubkey(), params),
+        &authority,
+        &[&authority],
+    );
+    let id = next_proposal_id(&svm);
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 1, id),
+        &operator,
+        &[&operator],
+    );
+    assert_eq!(region_state_of(&svm, 1).deposit, DEPOSIT * 2);
+}
+
 #[test]
 fn propose_rejects_bad_names() {
     let (mut svm, operator, _authority) = setup();

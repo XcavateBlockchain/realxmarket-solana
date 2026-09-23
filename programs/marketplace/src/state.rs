@@ -449,8 +449,8 @@ pub struct ShareListing {
     pub seller: Pubkey,
     /// Asking price per share, in quote units.
     pub share_price: u64,
-    /// The property's settlement mint, copied from the primary listing so
-    /// every trade of a property runs in one currency.
+    /// The mint this resale settles in, picked by the seller from the config
+    /// allowlist. Buyers and offers on this listing pay in it.
     pub payment_mint: Pubkey,
     /// Shares still for sale; partial buys draw it down.
     pub amount: u32,

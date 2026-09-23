@@ -18,6 +18,7 @@ pub struct ConfigParams {
     pub max_listing_duration: i64,
     pub max_tax_bps: u16,
     pub max_fee_bps: u16,
+    pub operator_bond_bps: u16,
     pub location_deposit: u64,
 }
 
@@ -47,6 +48,10 @@ impl ConfigParams {
         require!(self.max_tax_bps <= 10_000, RegionsError::InvalidConfig);
         // A fee at 100% would pay a seller nothing, so cap strictly below.
         require!(self.max_fee_bps < 10_000, RegionsError::InvalidConfig);
+        require!(
+            self.operator_bond_bps > 0 && self.operator_bond_bps <= 10_000,
+            RegionsError::InvalidConfig
+        );
         require!(self.location_deposit > 0, RegionsError::InvalidConfig);
         Ok(())
     }
@@ -62,6 +67,7 @@ impl ConfigParams {
         config.max_listing_duration = self.max_listing_duration;
         config.max_tax_bps = self.max_tax_bps;
         config.max_fee_bps = self.max_fee_bps;
+        config.operator_bond_bps = self.operator_bond_bps;
         config.location_deposit = self.location_deposit;
     }
 }

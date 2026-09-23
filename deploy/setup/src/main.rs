@@ -58,6 +58,8 @@ fn regions_params() -> regions::instructions::ConfigParams {
         max_listing_duration: 180 * 86_400,
         max_tax_bps: 1_000,
         max_fee_bps: 1_000,
+        // 0.1% of supply: 100k XCAV at the 100M devnet mint.
+        operator_bond_bps: 10,
         location_deposit: 50 * XCAV,
     }
 }

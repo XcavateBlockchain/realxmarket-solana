@@ -286,7 +286,10 @@ pub fn upgrade_object_handler(
     listing_id: u64,
     new_price: u64,
 ) -> Result<()> {
-    require!(new_price >= MIN_SHARE_PRICE, MarketplaceError::InvalidSharePrice);
+    require!(
+        new_price >= MIN_SHARE_PRICE,
+        MarketplaceError::InvalidSharePrice
+    );
 
     let listing = &mut ctx.accounts.listing;
     require!(

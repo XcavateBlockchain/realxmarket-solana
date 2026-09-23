@@ -148,7 +148,7 @@ pub struct MakeOffer<'info> {
     #[account(seeds = [OFFER_VAULT_SEED, &id.to_le_bytes(), offeror.key().as_ref()], bump)]
     pub offer_vault: UncheckedAccount<'info>,
 
-    /// CHECK: the property's settlement mint, from the share listing.
+    /// CHECK: the share listing's settlement mint.
     #[account(address = share_listing.payment_mint @ MarketplaceError::PaymentMintMismatch)]
     pub payment_mint: UncheckedAccount<'info>,
 

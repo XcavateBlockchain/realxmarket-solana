@@ -266,8 +266,9 @@ pub mod marketplace {
         asset_id: u64,
         amount: u32,
         share_price: u64,
+        payment_mint: Pubkey,
     ) -> Result<()> {
-        secondary::relist_shares_handler(ctx, asset_id, amount, share_price)
+        secondary::relist_shares_handler(ctx, asset_id, amount, share_price, payment_mint)
     }
 
     pub fn delist_shares(ctx: Context<DelistShares>) -> Result<()> {

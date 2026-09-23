@@ -127,10 +127,10 @@ pub fn create_region_handler(
 
 /// Claim a region whose operator seat is open: the term has elapsed, whether it
 /// ran its course or was brought forward by a resignation notice. First-come:
-/// RegionalOperator-only, no vote. The caller bonds 0.1% of the XCAV supply
-/// plus the recorded deposits backing the registered locations (they take the
-/// locations over), which becomes the new collateral, and the outgoing
-/// operator's remaining collateral is returned.
+/// RegionalOperator-only, no vote. The caller bonds the configured share of the
+/// XCAV supply plus the recorded deposits backing the registered locations
+/// (they take the locations over), which becomes the new collateral, and the
+/// outgoing operator's remaining collateral is returned.
 /// The incumbent may claim their own seat to renew it, in which case
 /// `old_owner_token` is omitted and only the difference between their existing
 /// collateral and the current bond moves.
@@ -216,10 +216,13 @@ pub fn claim_open_region_handler(
     // The bond covers the operator's stake plus the recorded deposits behind
     // the locations, which transfer to the new operator (see
     // `Region::location_collateral` for why it's never recomputed from config).
-    let bond = operator_bond(ctx.accounts.xcav_mint.supply)
-        .ok_or(RegionsError::BondTooSmall)?
-        .checked_add(ctx.accounts.region.location_collateral)
-        .ok_or(RegionsError::Overflow)?;
+    let bond = operator_bond(
+        ctx.accounts.xcav_mint.supply,
+        ctx.accounts.config.operator_bond_bps,
+    )
+    .ok_or(RegionsError::BondTooSmall)?
+    .checked_add(ctx.accounts.region.location_collateral)
+    .ok_or(RegionsError::Overflow)?;
     // Supply and config move between signing and landing; the caller caps what
     // they are willing to bond.
     require!(bond <= max_deposit, RegionsError::DepositTooHigh);

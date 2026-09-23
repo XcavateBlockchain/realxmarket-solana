@@ -5522,6 +5522,10 @@
         {
           "name": "share_price",
           "type": "u64"
+        },
+        {
+          "name": "payment_mint",
+          "type": "pubkey"
         }
       ]
     },
@@ -11797,8 +11801,8 @@
           {
             "name": "payment_mint",
             "docs": [
-              "The property's settlement mint, copied from the primary listing so",
-              "every trade of a property runs in one currency."
+              "The mint this resale settles in, picked by the seller from the config",
+              "allowlist. Buyers and offers on this listing pay in it."
             ],
             "type": "pubkey"
           },
@@ -11913,6 +11917,10 @@
           },
           {
             "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "payment_mint",
             "type": "pubkey"
           },
           {

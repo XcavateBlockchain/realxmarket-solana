@@ -177,6 +177,7 @@ pub fn regions_params() -> regions::instructions::ConfigParams {
         max_listing_duration: 1_000_000,
         max_tax_bps: 1_000,
         max_fee_bps: 1_000,
+        operator_bond_bps: 10,
         location_deposit: LOCATION_DEPOSIT,
     }
 }

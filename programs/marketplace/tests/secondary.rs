@@ -117,6 +117,53 @@ fn relist_validates_the_ask() {
         &[seller],
         "InvalidSharePrice",
     );
+    // A mint outside the config allowlist.
+    fails_with(
+        &mut svm,
+        relist_ix_in(&seller.pubkey(), 0, 0, 10, ASK, xcav_mint()),
+        seller,
+        &[seller],
+        "MintNotAccepted",
+    );
+}
+
+// The seller picks the resale currency; the buyer pays in it at the mint's
+// own decimals.
+#[test]
+fn relist_in_another_accepted_mint() {
+    let (mut svm, admin, investors) = finalized_property();
+    let seller = &investors[1];
+    ok(
+        &mut svm,
+        relist_ix_in(&seller.pubkey(), 0, 0, 10, ASK, gbp6_mint()),
+        seller,
+        &[seller],
+    );
+    assert_eq!(share_listing_of(&svm, 0).payment_mint, gbp6_mint());
+
+    let buyer = new_investor(&mut svm, &admin);
+    give_gbp6(&mut svm, &buyer.pubkey(), 1_000_000_000);
+    ok_with_budget(
+        &mut svm,
+        buy_relisted_ix_with_mint(
+            &buyer.pubkey(),
+            0,
+            0,
+            &seller.pubkey(),
+            5,
+            u64::MAX,
+            gbp6_mint(),
+            gbp6_acc(&buyer.pubkey()),
+        ),
+        &buyer,
+        &[&buyer],
+    );
+    // 5 shares at 6 GBP, 1% seller fee, at six decimals, paid to the
+    // seller's associated account the buy creates.
+    assert_eq!(
+        token_balance(&svm, &payment_ata(&seller.pubkey(), &gbp6_mint())),
+        30_000_000 - 300_000
+    );
 }
 
 #[test]

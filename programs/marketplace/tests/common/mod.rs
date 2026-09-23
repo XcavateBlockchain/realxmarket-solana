@@ -2190,12 +2190,25 @@ pub fn property_checkpoint_pda(asset_id: u64, owner: &Pubkey) -> Pubkey {
 }
 
 pub fn relist_ix(seller: &Pubkey, asset_id: u64, id: u64, amount: u32, price: u64) -> Instruction {
+    relist_ix_in(seller, asset_id, id, amount, price, tgbp_mint())
+}
+
+/// `relist_ix` settling in `payment_mint` instead of tGBP.
+pub fn relist_ix_in(
+    seller: &Pubkey,
+    asset_id: u64,
+    id: u64,
+    amount: u32,
+    price: u64,
+    payment_mint: Pubkey,
+) -> Instruction {
     Instruction::new_with_bytes(
         mid(),
         &marketplace::instruction::RelistShares {
             asset_id,
             amount,
             share_price: price,
+            payment_mint,
         }
         .data(),
         marketplace::accounts::RelistShares {

@@ -41,6 +41,8 @@ pub struct Config {
     pub max_tax_bps: u16,
     /// Highest seller or buyer fee an operator may set, in basis points.
     pub max_fee_bps: u16,
+    /// The operator bond as a share of the total XCAV supply, in basis points.
+    pub operator_bond_bps: u16,
     /// XCAV an operator locks per registered location, on top of their bond.
     pub location_deposit: u64,
     /// Monotonic id for the next proposal.
@@ -176,9 +178,9 @@ pub const POSTCODE_MAX_LEN: usize = 10;
 /// Longest region name accepted at proposal time.
 pub const MAX_REGION_NAME_LEN: usize = 32;
 
-/// The XCAV bond an operator must lock to run a region: 0.1% of the current
-/// supply. Returns `None` if the supply is too small to produce a positive bond.
-pub fn operator_bond(xcav_supply: u64) -> Option<u64> {
-    let bond = xcav_supply / 1_000;
+/// The XCAV bond an operator must lock to run a region: the configured share
+/// of the current supply. Returns `None` if that rounds down to nothing.
+pub fn operator_bond(xcav_supply: u64, bond_bps: u16) -> Option<u64> {
+    let bond = u64::try_from(xcav_supply as u128 * bond_bps as u128 / 10_000).ok()?;
     (bond > 0).then_some(bond)
 }

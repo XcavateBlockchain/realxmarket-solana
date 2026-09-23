@@ -248,10 +248,19 @@ pub fn relist_shares_handler(
     asset_id: u64,
     amount: u32,
     share_price: u64,
+    payment_mint: Pubkey,
 ) -> Result<()> {
     require!(
         ctx.accounts.listing.status == ListingStatus::Finalized,
         MarketplaceError::PropertyNotFinalized
+    );
+    // The allowlist was validated as real mints when the config was set.
+    require!(
+        ctx.accounts
+            .config
+            .accepted_payment_mints
+            .contains(&payment_mint),
+        MarketplaceError::MintNotAccepted
     );
     require!(amount > 0, MarketplaceError::InvalidShareAmount);
     require!(
@@ -282,7 +291,7 @@ pub fn relist_shares_handler(
     share_listing.asset_id = asset_id;
     share_listing.seller = ctx.accounts.seller.key();
     share_listing.share_price = share_price;
-    share_listing.payment_mint = ctx.accounts.listing.payment_mint;
+    share_listing.payment_mint = payment_mint;
     share_listing.amount = amount;
     share_listing.seller_fee_bps = ctx.accounts.region.seller_fee_bps;
     share_listing.buyer_fee_bps = ctx.accounts.region.buyer_fee_bps;
@@ -293,6 +302,7 @@ pub fn relist_shares_handler(
         id,
         asset_id,
         seller: share_listing.seller,
+        payment_mint,
         share_price,
         amount,
     });
@@ -428,7 +438,7 @@ pub struct BuyRelistedShares<'info> {
     )]
     pub buyer_holding: Box<Account<'info, ShareHolding>>,
 
-    /// CHECK: the property's settlement mint; the transfers fail on any
+    /// CHECK: the share listing's settlement mint; the transfers fail on any
     /// account that doesn't match it.
     #[account(address = share_listing.payment_mint @ MarketplaceError::PaymentMintMismatch)]
     pub payment_mint: UncheckedAccount<'info>,
@@ -1132,6 +1142,7 @@ pub struct SharesRelisted {
     pub id: u64,
     pub asset_id: u64,
     pub seller: Pubkey,
+    pub payment_mint: Pubkey,
     pub share_price: u64,
     pub amount: u32,
 }

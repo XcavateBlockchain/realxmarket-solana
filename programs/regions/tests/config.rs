@@ -67,6 +67,16 @@ fn update_config_rejects_bad_params() {
         &[&authority],
         "InvalidConfig",
     );
+    // A zero bond share would let anyone take a region for free.
+    let mut params = default_params();
+    params.operator_bond_bps = 0;
+    fails_with(
+        &mut svm,
+        update_config_ix(&authority.pubkey(), params),
+        &authority,
+        &[&authority],
+        "InvalidConfig",
+    );
 }
 
 #[test]

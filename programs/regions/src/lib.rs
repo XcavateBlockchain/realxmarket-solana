@@ -45,7 +45,8 @@ pub mod regions {
     }
 
     /// Propose a new region under a caller-chosen id and name.
-    /// RegionalOperator-only; bonds 0.1% of XCAV supply, capped by `max_deposit`.
+    /// RegionalOperator-only; bonds the configured share of XCAV supply, capped
+    /// by `max_deposit`.
     pub fn propose_new_region(
         ctx: Context<ProposeNewRegion>,
         region_id: u16,
@@ -93,10 +94,11 @@ pub mod regions {
         )
     }
 
-    /// Claim an open region seat, bonding 0.1% of XCAV supply plus the region's
-    /// location deposits, capped by the caller's `max_deposit`. First-come and
-    /// RegionalOperator-only; the incumbent may also call this to renew, paying
-    /// only the difference if the bond has moved since they last bonded.
+    /// Claim an open region seat, bonding the configured share of XCAV supply
+    /// plus the region's location deposits, capped by the caller's
+    /// `max_deposit`. First-come and RegionalOperator-only; the incumbent may
+    /// also call this to renew, paying only the difference if the bond has
+    /// moved since they last bonded.
     pub fn claim_open_region(
         ctx: Context<ClaimOpenRegion>,
         region_id: u16,

@@ -13,9 +13,9 @@ use xcavate_whitelist::state::{Role, RoleAccount};
 /// Propose a new region. The caller must be a RegionalOperator, the region must
 /// not already exist, and there must be no other open proposal for it. The
 /// proposer picks the id and the name, and the vote decides whether the region
-/// is legitimate. The proposer bonds 0.1% of the XCAV supply into the vault; it
-/// is returned if the proposal is rejected and becomes the region's collateral
-/// once claimed.
+/// is legitimate. The proposer bonds the configured share of the XCAV supply
+/// into the vault; it is returned if the proposal is rejected and becomes the
+/// region's collateral once claimed.
 #[derive(Accounts)]
 #[instruction(region_id: u16)]
 pub struct ProposeNewRegion<'info> {
@@ -104,7 +104,11 @@ pub fn propose_new_region_handler(
 
     let clock = Clock::get()?;
     let proposal_id = ctx.accounts.config.proposal_counter;
-    let deposit = operator_bond(ctx.accounts.xcav_mint.supply).ok_or(RegionsError::BondTooSmall)?;
+    let deposit = operator_bond(
+        ctx.accounts.xcav_mint.supply,
+        ctx.accounts.config.operator_bond_bps,
+    )
+    .ok_or(RegionsError::BondTooSmall)?;
     // The bond is computed from live supply; the caller caps what they are
     // willing to pay so state changes can't reprice their signed transaction.
     require!(deposit <= max_deposit, RegionsError::DepositTooHigh);
