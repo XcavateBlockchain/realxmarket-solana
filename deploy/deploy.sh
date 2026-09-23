@@ -159,7 +159,6 @@ deploy_program xcavate_whitelist
 deploy_program regions
 deploy_program marketplace
 deploy_program property
-deploy_program bucket
 
 # --- protocol bootstrap -----------------------------------------------------
 cargo run -q -p xcavate-setup -- --url "$RPC_URL"

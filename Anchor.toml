@@ -6,7 +6,6 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-bucket = "FyDcu5WMNJw2kmeDsoiyaeeumHfQxrZ91EuZjzveNs7G"
 marketplace = "dj9Q3CpHvDHwexCbkgJ5APDx4JsTxPssNebkvP15g1T"
 property = "deCp9srk9C6P4BXJaFpjR5H6Jsm6DCq8AL2kk338dVq"
 regions = "5iupkzVtWxee48UXh3s615V9sXXuYjsSr61VPuduXdPc"

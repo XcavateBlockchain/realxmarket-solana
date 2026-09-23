@@ -855,20 +855,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bucket"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "litesvm",
- "proptest",
- "solana-keypair",
- "solana-message",
- "solana-sha256-hasher",
- "solana-signer",
- "solana-transaction",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5933,7 +5919,6 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "bucket",
  "marketplace",
  "property",
  "regions",

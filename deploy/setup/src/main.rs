@@ -221,10 +221,6 @@ fn property_vault() -> Pubkey {
     Pubkey::find_program_address(&[property::VAULT_SEED], &property::ID).0
 }
 
-fn bucket_config() -> Pubkey {
-    Pubkey::find_program_address(&[bucket::CONFIG_SEED], &bucket::ID).0
-}
-
 // --- plumbing ---
 
 struct Ctx {
@@ -492,28 +488,6 @@ fn main() {
         );
     }
 
-    if ctx.exists(&bucket_config()) {
-        println!("  - bucket config already initialized");
-    } else {
-        ctx.send(
-            "initialize bucket config",
-            Instruction::new_with_bytes(
-                bucket::ID,
-                &bucket::instruction::InitializeConfig {}.data(),
-                bucket::accounts::InitializeConfig {
-                    authority: authority.pubkey(),
-                    program: bucket::ID,
-                    program_data: program_data(&bucket::ID),
-                    config: bucket_config(),
-                    system_program: SYS,
-                }
-                .to_account_metas(None),
-            ),
-            &authority,
-            &[&authority],
-        );
-    }
-
     // --- region 1, proposed and voted through by the operator ---
     println!("region {REGION_ID}");
     if ctx.exists(&region_pda(REGION_ID)) {
@@ -740,8 +714,7 @@ fn main() {
     "xcavate_whitelist": "{}",
     "regions": "{}",
     "marketplace": "{}",
-    "property": "{}",
-    "bucket": "{}"
+    "property": "{}"
   }},
   "mints": {{
     "xcav": "{xcav_mint}",
@@ -752,8 +725,7 @@ fn main() {
     "whitelist": "{}",
     "regions": "{}",
     "marketplace": "{}",
-    "property": "{}",
-    "bucket": "{}"
+    "property": "{}"
   }},
   "region": {{ "id": {REGION_ID}, "address": "{}", "postcodes": ["SW1A1AA", "M11AE"] }},
   "wallets": {{
@@ -775,12 +747,10 @@ fn main() {
         regions::ID,
         marketplace::ID,
         property::ID,
-        bucket::ID,
         roles_config(),
         regions_config(),
         marketplace_config(),
         property_config(),
-        bucket_config(),
         region_pda(REGION_ID),
         authority.pubkey(),
         admin.pubkey(),
