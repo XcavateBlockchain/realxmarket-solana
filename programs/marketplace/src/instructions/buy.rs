@@ -85,9 +85,9 @@ pub struct BuyPropertyShares<'info> {
     pub investor: Signer<'info>,
 
     /// The sponsor wallet fronting rent for the investor's accounts. Fixed to
-    /// the configured rent collector, so the wallet paying the rent is also
+    /// the configured rent sponsor, so the wallet paying the rent is also
     /// the one refunded when the accounts close.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
     pub payer: Signer<'info>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
@@ -150,7 +150,8 @@ pub struct BuyPropertyShares<'info> {
     )]
     pub holding: Box<Account<'info, ShareHolding>>,
 
-    /// The mint the investor pays in; must be on the accepted list.
+    /// The listing's settlement mint.
+    #[account(address = listing.payment_mint @ MarketplaceError::PaymentMintMismatch)]
     pub payment_mint: Box<InterfaceAccount<'info, Mint>>,
 
     /// The investor's payment account the funds are pulled from.
@@ -245,21 +246,7 @@ pub fn buy_property_shares_handler(
         ctx.accounts.position.reserved_share_amount == 0,
         MarketplaceError::ReservationOutstanding
     );
-    require!(
-        ctx.accounts
-            .config
-            .accepted_payment_mints
-            .contains(&ctx.accounts.payment_mint.key()),
-        MarketplaceError::MintNotAccepted
-    );
-    // One payment mint per position, so refunds are a single transfer.
     let position_exists = ctx.accounts.position.investor != Pubkey::default();
-    if position_exists {
-        require!(
-            ctx.accounts.position.payment_mint == ctx.accounts.payment_mint.key(),
-            MarketplaceError::PaymentMintMismatch
-        );
-    }
     // Ownership cap, against the snapshot taken at listing time.
     let owned_after = (ctx.accounts.holding.amount as u64)
         .checked_add(amount as u64)

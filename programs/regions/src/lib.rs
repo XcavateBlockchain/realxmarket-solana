@@ -44,14 +44,15 @@ pub mod regions {
         initialize::accept_authority_handler(ctx)
     }
 
-    /// Propose a new region. RegionalOperator-only; bonds 0.1% of XCAV supply,
-    /// capped by the caller's `max_deposit`.
+    /// Propose a new region under a caller-chosen id and name.
+    /// RegionalOperator-only; bonds 0.1% of XCAV supply, capped by `max_deposit`.
     pub fn propose_new_region(
         ctx: Context<ProposeNewRegion>,
         region_id: u16,
+        name: String,
         max_deposit: u64,
     ) -> Result<()> {
-        propose::propose_new_region_handler(ctx, region_id, max_deposit)
+        propose::propose_new_region_handler(ctx, region_id, name, max_deposit)
     }
 
     /// Vote on an open proposal. Anyone may vote; the amount is locked.

@@ -47,6 +47,7 @@ pub const LISTING_DURATION: i64 = 100_000;
 pub const TAX_BPS: u16 = 300;
 pub const SELLER_FEE_BPS: u16 = 200;
 pub const BUYER_FEE_BPS: u16 = 100;
+pub const REGION_NAME: &str = "England";
 
 // --- ids / PDAs ---
 
@@ -408,10 +409,21 @@ pub fn propose_ix_capped(
     proposal_id: u64,
     max_deposit: u64,
 ) -> Instruction {
+    propose_ix_named(proposer, region_id, REGION_NAME, proposal_id, max_deposit)
+}
+
+pub fn propose_ix_named(
+    proposer: &Pubkey,
+    region_id: u16,
+    name: &str,
+    proposal_id: u64,
+    max_deposit: u64,
+) -> Instruction {
     Instruction::new_with_bytes(
         rid(),
         &regions::instruction::ProposeNewRegion {
             region_id,
+            name: name.to_string(),
             max_deposit,
         }
         .data(),

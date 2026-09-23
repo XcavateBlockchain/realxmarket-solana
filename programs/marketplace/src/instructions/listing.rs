@@ -4,8 +4,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use crate::constants::{CONFIG_SEED, LISTING_SEED, PROPERTY_SEED, VAULT_SEED};
 use crate::error::MarketplaceError;
 use crate::state::{
-    Config, LawyerAssignment, Listing, ListingStatus, PropertyAsset, SpvElection,
-    MIN_PAYMENT_DECIMALS, PRICE_DECIMALS,
+    Config, LawyerAssignment, Listing, ListingStatus, PropertyAsset, SpvElection, MIN_SHARE_PRICE,
 };
 use crate::vault::lock_to_vault;
 
@@ -84,6 +83,13 @@ pub struct ListProperty<'info> {
     )]
     pub listing: Box<Account<'info, Listing>>,
 
+    /// The mint the sale settles in, from the config allowlist.
+    #[account(
+        constraint = config.accepted_payment_mints.contains(&payment_mint.key())
+            @ MarketplaceError::MintNotAccepted,
+    )]
+    pub payment_mint: Box<InterfaceAccount<'info, Mint>>,
+
     /// The XCAV mint (for `transfer_checked`).
     #[account(address = config.xcav_mint @ MarketplaceError::InvalidMint)]
     pub xcav_mint: Box<InterfaceAccount<'info, Mint>>,
@@ -124,11 +130,8 @@ pub fn list_property_handler(
         share_amount >= config.min_property_shares && share_amount <= config.max_property_shares,
         MarketplaceError::InvalidShareAmount
     );
-    require!(share_price > 0, MarketplaceError::InvalidSharePrice);
-    // A share must still charge something after rescaling to the
-    // lowest-decimal accepted payment mint.
     require!(
-        share_price >= 10u64.pow((PRICE_DECIMALS - MIN_PAYMENT_DECIMALS) as u32),
+        share_price >= MIN_SHARE_PRICE,
         MarketplaceError::InvalidSharePrice
     );
     // The full property must stay priceable in u64 for settlement math.
@@ -192,6 +195,7 @@ pub fn list_property_handler(
     listing.developer = ctx.accounts.developer.key();
     listing.asset_id = listing_id;
     listing.share_price = share_price;
+    listing.payment_mint = ctx.accounts.payment_mint.key();
     listing.listed_share_amount = share_amount;
     listing.sold_share_amount = 0;
     listing.reserved_share_amount = 0;
@@ -228,6 +232,7 @@ pub fn list_property_handler(
         listing_id,
         developer: listing.developer,
         region_id,
+        payment_mint: listing.payment_mint,
         share_price,
         share_amount,
         listing_expiry,
@@ -281,7 +286,7 @@ pub fn upgrade_object_handler(
     listing_id: u64,
     new_price: u64,
 ) -> Result<()> {
-    require!(new_price > 0, MarketplaceError::InvalidSharePrice);
+    require!(new_price >= MIN_SHARE_PRICE, MarketplaceError::InvalidSharePrice);
 
     let listing = &mut ctx.accounts.listing;
     require!(
@@ -313,6 +318,7 @@ pub struct PropertyListed {
     pub listing_id: u64,
     pub developer: Pubkey,
     pub region_id: u16,
+    pub payment_mint: Pubkey,
     pub share_price: u64,
     pub share_amount: u32,
     pub listing_expiry: i64,

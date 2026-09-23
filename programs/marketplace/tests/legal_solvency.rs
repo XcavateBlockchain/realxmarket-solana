@@ -1,7 +1,7 @@
 //! Property-based checks over the legal phase: random walks over verdicts,
 //! the silence crank, resignations, case releases, both refund exits, the
-//! fee settlement and teardown, starting from a sold-out sale paid in two
-//! mints of different decimals. Every step must conserve the payment tokens,
+//! fee settlement and teardown, starting from a sold-out sale settled in a
+//! 9- or 6-decimal mint. Every step must conserve the payment tokens,
 //! keep the vault equal to what the accounts say it owes, keep the lawyer's
 //! pay inside their quoted costs, and keep every counter honest. Each walk
 //! then drains to nothing, proving no reachable state is a trap.
@@ -19,8 +19,13 @@ const COSTS: u64 = 1_000_000_000;
 const DOCS: [u8; 32] = [7u8; 32];
 const DOCS2: [u8; 32] = [8u8; 32];
 
-/// (shares, pays in gbp6) per investor; a mixed-mint sellout of 100.
-const BUYS: [(u32, bool); 4] = [(34, false), (33, false), (24, true), (9, true)];
+fn mint_of(gbp6: bool) -> Pubkey {
+    if gbp6 {
+        gbp6_mint()
+    } else {
+        tgbp_mint()
+    }
+}
 
 fn token_balance(svm: &LiteSVM, addr: &Pubkey) -> u64 {
     svm.get_account(addr)
@@ -54,7 +59,7 @@ fn mint_holders(
             tgbp_acc(owner)
         }
     };
-    let mint = if gbp6 { gbp6_mint() } else { tgbp_mint() };
+    let mint = mint_of(gbp6);
     let mut all: Vec<Pubkey> = investors.iter().map(|kp| acc(&kp.pubkey())).collect();
     all.push(acc(dl));
     all.push(acc(sl));
@@ -100,22 +105,17 @@ fn check_invariants(
     sl: &Pubkey,
     developer: &Pubkey,
     operator: &Pubkey,
-    totals: (u64, u64),
+    gbp6: bool,
+    total: u64,
 ) -> Result<(), TestCaseError> {
+    let mint = mint_of(gbp6);
     // Conservation: nothing mints or burns payment tokens, whatever happens.
     prop_assert_eq!(
         total_in(
             svm,
-            &mint_holders(investors, dl, sl, developer, operator, false)
+            &mint_holders(investors, dl, sl, developer, operator, gbp6)
         ),
-        totals.0
-    );
-    prop_assert_eq!(
-        total_in(
-            svm,
-            &mint_holders(investors, dl, sl, developer, operator, true)
-        ),
-        totals.1
+        total
     );
 
     // Neither lawyer can collect more than their quote, plus the tax the
@@ -137,13 +137,10 @@ fn check_invariants(
             prop_assert!(!account_alive(svm, &holding_pda(0, &investor.pubkey())));
         }
         prop_assert!(!account_alive(svm, &property_pda(0)));
-        for gbp6 in [false, true] {
-            let mint = if gbp6 { gbp6_mint() } else { tgbp_mint() };
-            prop_assert_eq!(
-                token_balance(svm, &payment_ata(&listing_vault_pda(0), &mint)),
-                0
-            );
-        }
+        prop_assert_eq!(
+            token_balance(svm, &payment_ata(&listing_vault_pda(0), &mint)),
+            0
+        );
         return Ok(());
     }
 
@@ -179,14 +176,11 @@ fn check_invariants(
         prop_assert!(sl_gain_quote + listing.spv_costs_due <= COSTS);
     }
     if listing.status == ListingStatus::Finalized {
-        // Settlement drains the vault to zero in every mint.
-        for gbp6 in [false, true] {
-            let mint = if gbp6 { gbp6_mint() } else { tgbp_mint() };
-            prop_assert_eq!(
-                token_balance(svm, &payment_ata(&listing_vault_pda(0), &mint)),
-                0
-            );
-        }
+        // Settlement drains the vault to zero.
+        prop_assert_eq!(
+            token_balance(svm, &payment_ata(&listing_vault_pda(0), &mint)),
+            0
+        );
     }
 
     // Case counts mirror the assignments exactly, except after settlement:
@@ -202,18 +196,14 @@ fn check_invariants(
         prop_assert_eq!(lawyer_of(svm, lawyer).active_cases, expected);
     }
 
-    // Per mint: the vault holds exactly what open positions are owed, plus,
-    // once cancelled, whatever share of the retained fees hasn't been paid
-    // out to the lawyer and treasury yet. A settled sale paid everything
-    // out, so the equation no longer applies.
-    for gbp6 in [false, true] {
-        if listing.status == ListingStatus::Finalized {
-            break;
-        }
-        let mint = if gbp6 { gbp6_mint() } else { tgbp_mint() };
+    // The vault holds exactly what open positions are owed, plus, once
+    // cancelled, whatever share of the retained fees hasn't been paid out to
+    // the lawyer and treasury yet. A settled sale paid everything out, so
+    // the equation no longer applies.
+    if listing.status != ListingStatus::Finalized {
         let mut open_owed = 0u64;
-        for (investor, (_, pays_gbp6)) in investors.iter().zip(BUYS) {
-            if pays_gbp6 != gbp6 || !account_alive(svm, &position_pda(0, &investor.pubkey())) {
+        for investor in investors {
+            if !account_alive(svm, &position_pda(0, &investor.pubkey())) {
                 continue;
             }
             let p = position_of(svm, 0, &investor.pubkey());
@@ -223,12 +213,7 @@ fn check_invariants(
             }
         }
         let retained = if listing.status == ListingStatus::Cancelled {
-            let total_fees: u64 = investors
-                .iter()
-                .zip(BUYS)
-                .filter(|(_, (_, m))| *m == gbp6)
-                .map(|(_, (shares, m))| fee_in_mint(shares, m))
-                .sum();
+            let total_fees: u64 = BUYS.iter().map(|&shares| fee_in_mint(shares, gbp6)).sum();
             let paid_out = token_balance(svm, &(if gbp6 { gbp6_acc(sl) } else { tgbp_acc(sl) }))
                 + token_balance(svm, &payment_ata(&treasury(), &mint));
             total_fees - paid_out
@@ -255,10 +240,10 @@ fn check_invariants(
     Ok(())
 }
 
-/// Sold out across both mints, SPV attested, both lawyers engaged, investor
+/// Sold out in the chosen mint, SPV attested, both lawyers engaged, investor
 /// a's 34 shares locked behind their election vote.
 #[allow(clippy::type_complexity)]
-fn setup_legal() -> (LiteSVM, Keypair, Keypair, Vec<Keypair>, Keypair, Keypair) {
+fn setup_legal(gbp6: bool) -> (LiteSVM, Keypair, Keypair, Vec<Keypair>, Keypair, Keypair) {
     let (mut svm, admin, _authority) = setup();
     let operator = funded(&mut svm);
     seed_region(&mut svm, 1, &operator.pubkey());
@@ -266,7 +251,16 @@ fn setup_legal() -> (LiteSVM, Keypair, Keypair, Vec<Keypair>, Keypair, Keypair) 
     let developer = new_developer(&mut svm, &admin);
     ok(
         &mut svm,
-        list_ix(&developer.pubkey(), 0),
+        list_property_ix_in(
+            &developer.pubkey(),
+            0,
+            1,
+            POSTCODE,
+            mint_of(gbp6),
+            SHARE_PRICE,
+            SHARE_AMOUNT,
+            u64::MAX,
+        ),
         &developer,
         &[&developer],
     );
@@ -279,7 +273,7 @@ fn setup_legal() -> (LiteSVM, Keypair, Keypair, Vec<Keypair>, Keypair, Keypair) 
 
     let spn = sponsor();
     let investors: Vec<Keypair> = (0..4).map(|_| new_investor(&mut svm, &admin)).collect();
-    for (investor, (shares, gbp6)) in investors.iter().zip(BUYS) {
+    for (investor, shares) in investors.iter().zip(BUYS) {
         let ix = if gbp6 {
             give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
             reserve_ix_with_mint(
@@ -303,7 +297,7 @@ fn setup_legal() -> (LiteSVM, Keypair, Keypair, Vec<Keypair>, Keypair, Keypair) 
         &confirmer,
         &[&confirmer],
     );
-    for (investor, (_, gbp6)) in investors.iter().zip(BUYS) {
+    for investor in &investors {
         let ix = if gbp6 {
             claim_ix_with_mint(
                 &investor.pubkey(),
@@ -380,27 +374,19 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(16))]
     #[test]
     fn random_legal_walks_stay_solvent_and_drain(
+        gbp6 in any::<bool>(),
         ops in proptest::collection::vec((0u8..4u8, 0u8..15u8, any::<bool>()), 1..12)
     ) {
-        let (mut svm, operator, developer, investors, dl, sl) = setup_legal();
-        let totals = (
-            total_in(&svm, &mint_holders(
-                &investors, &dl.pubkey(), &sl.pubkey(), &developer.pubkey(), &operator.pubkey(), false,
-            )),
-            total_in(&svm, &mint_holders(
-                &investors, &dl.pubkey(), &sl.pubkey(), &developer.pubkey(), &operator.pubkey(), true,
-            )),
-        );
+        let (mut svm, operator, developer, investors, dl, sl) = setup_legal(gbp6);
+        let mint = mint_of(gbp6);
+        let total = total_in(&svm, &mint_holders(
+            &investors, &dl.pubkey(), &sl.pubkey(), &developer.pubkey(), &operator.pubkey(), gbp6,
+        ));
         let cranker = funded(&mut svm);
 
         let exit = |investor: usize, cancelled: bool| {
-            let (_, gbp6) = BUYS[investor];
             let who = &investors[investor];
-            let (mint, acc) = if gbp6 {
-                (gbp6_mint(), gbp6_acc(&who.pubkey()))
-            } else {
-                (tgbp_mint(), tgbp_acc(&who.pubkey()))
-            };
+            let acc = if gbp6 { gbp6_acc(&who.pubkey()) } else { tgbp_acc(&who.pubkey()) };
             let mut ix = withdraw_exit_ix_with_mint(&who.pubkey(), 0, mint, acc);
             use anchor_lang::InstructionData;
             ix.data = if cancelled {
@@ -451,13 +437,14 @@ proptest! {
                     let _ = process(&mut svm, ix, &cranker, &[&cranker]);
                 }
                 10 => {
-                    let ix =
-                        settle_cancelled_fees_ix(&cranker.pubkey(), 0, &sl.pubkey());
+                    let ix = settle_fees_ix_with_mint(&cranker.pubkey(), 0, mint, &sl.pubkey());
                     let _ = process(&mut svm, ix, &cranker, &[&cranker]);
                 }
+                // An accepted mint the sale never collected must bounce.
                 11 => {
-                    let ix = settle_fees_ix_with_mint(&cranker.pubkey(), 0, gbp6_mint(), &sl.pubkey());
-                    let _ = process(&mut svm, ix, &cranker, &[&cranker]);
+                    let other = mint_of(!gbp6);
+                    let ix = settle_fees_ix_with_mint(&cranker.pubkey(), 0, other, &sl.pubkey());
+                    prop_assert!(process(&mut svm, ix, &cranker, &[&cranker]).is_err());
                 }
                 12 => {
                     let ix = withdraw_deposit_ix(&developer.pubkey(), 0);
@@ -472,7 +459,7 @@ proptest! {
                         &dl.pubkey(),
                         &sl.pubkey(),
                         &operator.pubkey(),
-                        &[tgbp_mint(), gbp6_mint()],
+                        &[mint],
                     );
                     let _ = process(&mut svm, ix, &cranker, &[&cranker]);
                 }
@@ -482,14 +469,14 @@ proptest! {
                         0,
                         &developer.pubkey(),
                         true,
-                        &[tgbp_mint(), gbp6_mint()],
+                        &[mint],
                     );
                     let _ = process(&mut svm, ix, &cranker, &[&cranker]);
                 }
             }
             check_invariants(
                 &svm, &investors, &dl.pubkey(), &sl.pubkey(),
-                &developer.pubkey(), &operator.pubkey(), totals,
+                &developer.pubkey(), &operator.pubkey(), gbp6, total,
             )?;
         }
 
@@ -515,19 +502,13 @@ proptest! {
             }
             let _ = process(
                 &mut svm,
-                settle_cancelled_fees_ix(&cranker.pubkey(), 0, &sl.pubkey()),
+                settle_fees_ix_with_mint(&cranker.pubkey(), 0, mint, &sl.pubkey()),
                 &cranker,
                 &[&cranker],
             );
-            let _ = process(
-                &mut svm,
-                settle_fees_ix_with_mint(&cranker.pubkey(), 0, gbp6_mint(), &sl.pubkey()),
-                &cranker,
-                &[&cranker],
-            );
-            // The recorded fee quote is the floored round trip of what each
-            // mint collected, so once the refunds are out the retained pots
-            // always cover the SPV lawyer: settling every mint clears the debt.
+            // The recorded fee quote is the floored round trip of what the
+            // sale collected, so once the refunds are out the retained pot
+            // always covers the SPV lawyer: settling the fees clears the debt.
             if account_alive(&svm, &listing_pda(0)) {
                 let listing = listing_of(&svm, 0);
                 if listing.status == ListingStatus::Cancelled && listing.sold_share_amount == 0 {
@@ -547,14 +528,14 @@ proptest! {
                     0,
                     &developer.pubkey(),
                     true,
-                    &[tgbp_mint(), gbp6_mint()],
+                    &[mint],
                 ),
                 &cranker,
                 &[&cranker],
             );
             check_invariants(
                 &svm, &investors, &dl.pubkey(), &sl.pubkey(),
-                &developer.pubkey(), &operator.pubkey(), totals,
+                &developer.pubkey(), &operator.pubkey(), gbp6, total,
             )?;
         }
         // Either the sale settled, and the listing lives on as the record,

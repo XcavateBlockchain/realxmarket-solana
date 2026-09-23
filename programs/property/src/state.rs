@@ -22,7 +22,7 @@ pub struct Config {
     pub treasury: Pubkey,
     /// The sponsor wallet that fronts account rent for holders. Sponsored
     /// closes send their lamports here, not to the holder.
-    pub rent_collector: Pubkey,
+    pub rent_sponsor: Pubkey,
     /// XCAV an agent locks per location they register in.
     pub agent_deposit: u64,
     /// Seconds an agent election stays open once the first candidacy claims.

@@ -1,6 +1,6 @@
 //! Settling an approved sale: the one-transaction payout to the developer,
-//! both lawyers, the region's operator and the treasury, across payment
-//! mints of different decimals, plus the gates that keep it to sales the
+//! both lawyers, the region's operator and the treasury, in the listing's
+//! own mint at either decimals, plus the gates that keep it to sales the
 //! lawyers actually approved.
 
 mod common;
@@ -12,10 +12,7 @@ use marketplace::state::ListingStatus;
 const COSTS: u64 = 1_000_000_000;
 const DOCS: [u8; 32] = [7u8; 32];
 
-/// (shares, pays in gbp6) per investor; a mixed-mint sellout of 100.
-const BUYS: [(u32, bool); 4] = [(34, false), (33, false), (24, true), (9, true)];
-
-/// Everything up to `Legal`: mixed-mint sellout, SPV attested, both lawyers
+/// Everything up to `Legal`: tGBP sellout, SPV attested, both lawyers
 /// engaged and approving the same document set. Returns the region operator
 /// too, since settlement pays them.
 #[allow(clippy::type_complexity)]
@@ -30,15 +27,16 @@ fn setup_approved(
     Keypair,
     Keypair,
 ) {
-    setup_engaged(tax_paid_by_developer, true)
+    setup_engaged(tax_paid_by_developer, true, tgbp_mint())
 }
 
-/// Same, minus the approvals when `approve` is false: the sale stays
-/// `SoldOut` with both lawyers engaged.
+/// Same, settling in `mint`, minus the approvals when `approve` is false:
+/// the sale stays `SoldOut` with both lawyers engaged.
 #[allow(clippy::type_complexity)]
 fn setup_engaged(
     tax_paid_by_developer: bool,
     approve: bool,
+    mint: Pubkey,
 ) -> (
     LiteSVM,
     Keypair,
@@ -53,7 +51,16 @@ fn setup_engaged(
     seed_region(&mut svm, 1, &operator.pubkey());
     seed_location(&mut svm, 1, POSTCODE);
     let developer = new_developer(&mut svm, &admin);
-    let mut list = list_ix(&developer.pubkey(), 0);
+    let mut list = list_property_ix_in(
+        &developer.pubkey(),
+        0,
+        1,
+        POSTCODE,
+        mint,
+        SHARE_PRICE,
+        SHARE_AMOUNT,
+        u64::MAX,
+    );
     list.data = marketplace::instruction::ListProperty {
         region_id: 1,
         postcode: POSTCODE.to_vec(),
@@ -72,8 +79,9 @@ fn setup_engaged(
     );
 
     let spn = sponsor();
+    let gbp6 = mint == gbp6_mint();
     let investors: Vec<Keypair> = (0..4).map(|_| new_investor(&mut svm, &admin)).collect();
-    for (investor, (shares, gbp6)) in investors.iter().zip(BUYS) {
+    for (investor, shares) in investors.iter().zip(BUYS) {
         let ix = if gbp6 {
             give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
             reserve_ix_with_mint(
@@ -97,7 +105,7 @@ fn setup_engaged(
         &confirmer,
         &[&confirmer],
     );
-    for (investor, (_, gbp6)) in investors.iter().zip(BUYS) {
+    for investor in &investors {
         let ix = if gbp6 {
             claim_ix_with_mint(
                 &investor.pubkey(),
@@ -186,16 +194,18 @@ fn deal_ix(
     sl: &Pubkey,
     operator: &Pubkey,
 ) -> anchor_lang::solana_program::instruction::Instruction {
-    execute_deal_ix(
-        cranker,
-        0,
-        1,
-        developer,
-        dl,
-        sl,
-        operator,
-        &[tgbp_mint(), gbp6_mint()],
-    )
+    deal_ix_in(cranker, developer, dl, sl, operator, tgbp_mint())
+}
+
+fn deal_ix_in(
+    cranker: &Pubkey,
+    developer: &Pubkey,
+    dl: &Pubkey,
+    sl: &Pubkey,
+    operator: &Pubkey,
+    mint: Pubkey,
+) -> anchor_lang::solana_program::instruction::Instruction {
+    execute_deal_ix(cranker, 0, 1, developer, dl, sl, operator, &[mint])
 }
 
 #[test]
@@ -216,32 +226,17 @@ fn execute_deal_pays_everyone_and_finalizes() {
         &[&cranker],
     );
 
-    // tGBP side: 67 shares. funds 335e9, buyer fee 3.35e9, tax 10.05e9,
-    // seller fee 1% = 3.35e9. The tax rides to the SPV lawyer, who also
-    // draws their 1 GBP costs from the 6.7e9 pot; the developer's own lawyer
-    // is paid off chain, so the 5.7e9 left splits 67/33 between region and
-    // treasury.
-    assert_eq!(tgbp_balance(&svm, &developer.pubkey()), 331_650_000_000);
+    // 100 shares: funds 500e9, buyer fee 5e9, tax 15e9, seller fee 1% = 5e9.
+    // The tax rides to the SPV lawyer, who also draws their 1 GBP costs from
+    // the 10e9 pot; the developer's own lawyer is paid off chain, so the 9e9
+    // left splits 67/33 between region and treasury.
+    assert_eq!(tgbp_balance(&svm, &developer.pubkey()), 495_000_000_000);
     assert_eq!(tgbp_balance(&svm, &dl.pubkey()), 0);
-    assert_eq!(tgbp_balance(&svm, &sl.pubkey()), 10_050_000_000 + COSTS);
-    assert_eq!(tgbp_balance(&svm, &operator.pubkey()), 3_819_000_000);
-    // gbp6 side: 33 shares at 6 decimals. funds 165e6, buyer+seller fee
-    // 3.3e6, tax 4.95e6; the costs were already covered, so the whole pot
-    // splits.
-    assert_eq!(gbp6_balance(&svm, &developer.pubkey()), 163_350_000);
-    assert_eq!(gbp6_balance(&svm, &dl.pubkey()), 0);
-    assert_eq!(gbp6_balance(&svm, &sl.pubkey()), 4_950_000);
-    assert_eq!(gbp6_balance(&svm, &operator.pubkey()), 2_211_000);
+    assert_eq!(tgbp_balance(&svm, &sl.pubkey()), 15_000_000_000 + COSTS);
+    assert_eq!(tgbp_balance(&svm, &operator.pubkey()), 6_030_000_000);
 
-    // The vault drained to zero in both mints and the sale is final.
-    for mint in [tgbp_mint(), gbp6_mint()] {
-        let acc = svm
-            .get_account(&payment_ata(&listing_vault_pda(0), &mint))
-            .unwrap();
-        let state: anchor_spl::token::spl_token::state::Account =
-            anchor_lang::solana_program::program_pack::Pack::unpack(&acc.data).unwrap();
-        assert_eq!(state.amount, 0);
-    }
+    // The vault drained to zero and the sale is final.
+    assert_eq!(token_balance(&svm, &listing_payment_ata(0)), 0);
     let listing = listing_of(&svm, 0);
     assert_eq!(listing.status, ListingStatus::Finalized);
     assert_eq!(listing.deposit, 0);
@@ -278,6 +273,38 @@ fn execute_deal_pays_everyone_and_finalizes() {
     );
 }
 
+// The same sale in the 6-decimal mint: every figure is the tGBP one over
+// 1_000, including the lawyer's costs.
+#[test]
+fn execute_deal_settles_a_six_decimal_listing() {
+    let (mut svm, _admin, developer, _investors, dl, sl, operator) =
+        setup_engaged(false, true, gbp6_mint());
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        deal_ix_in(
+            &cranker.pubkey(),
+            &developer.pubkey(),
+            &dl.pubkey(),
+            &sl.pubkey(),
+            &operator.pubkey(),
+            gbp6_mint(),
+        ),
+        &cranker,
+        &[&cranker],
+    );
+
+    assert_eq!(gbp6_balance(&svm, &developer.pubkey()), 495_000_000);
+    assert_eq!(gbp6_balance(&svm, &dl.pubkey()), 0);
+    assert_eq!(gbp6_balance(&svm, &sl.pubkey()), 15_000_000 + COSTS / 1_000);
+    assert_eq!(gbp6_balance(&svm, &operator.pubkey()), 6_030_000);
+    assert_eq!(
+        token_balance(&svm, &payment_ata(&listing_vault_pda(0), &gbp6_mint())),
+        0
+    );
+    assert_eq!(listing_of(&svm, 0).status, ListingStatus::Finalized);
+}
+
 #[test]
 fn tax_rides_with_the_developer_side() {
     let (mut svm, _admin, developer, _investors, dl, sl, operator) = setup_approved(true);
@@ -300,15 +327,16 @@ fn tax_rides_with_the_developer_side() {
     // developer's lawyer ever sees here.
     assert_eq!(
         tgbp_balance(&svm, &developer.pubkey()),
-        331_650_000_000 - 10_050_000_000
+        495_000_000_000 - 15_000_000_000
     );
-    assert_eq!(tgbp_balance(&svm, &dl.pubkey()), 10_050_000_000);
+    assert_eq!(tgbp_balance(&svm, &dl.pubkey()), 15_000_000_000);
     assert_eq!(tgbp_balance(&svm, &sl.pubkey()), COSTS);
 }
 
 #[test]
 fn execute_deal_requires_approval() {
-    let (mut svm, _admin, developer, _investors, dl, sl, operator) = setup_engaged(false, false);
+    let (mut svm, _admin, developer, _investors, dl, sl, operator) =
+        setup_engaged(false, false, tgbp_mint());
     let cranker = funded(&mut svm);
     fails_with(
         &mut svm,
@@ -359,7 +387,7 @@ fn execute_deal_rejects_foreign_payout_accounts() {
         &operator.pubkey(),
     );
     // Swap the developer's tGBP payout account for a stranger's.
-    let fixed = ix.accounts.len() - 14;
+    let fixed = ix.accounts.len() - 7;
     ix.accounts[fixed + 2].pubkey = tgbp_acc(&stranger.pubkey());
     fails_with(&mut svm, ix, &cranker, &[&cranker], "WrongPayee");
 }
@@ -449,26 +477,21 @@ fn price_update_cannot_skew_the_tax_obligation() {
 fn settled_vault_rent_returns_to_the_sponsor() {
     let (mut svm, _admin, _investors) = finalized_property();
     let cranker = funded(&mut svm);
-    let vault = listing_vault_pda(0);
-    let tgbp_ata = payment_ata(&vault, &tgbp_mint());
-    let gbp6_ata = payment_ata(&vault, &gbp6_mint());
-    let rent =
-        svm.get_account(&tgbp_ata).unwrap().lamports + svm.get_account(&gbp6_ata).unwrap().lamports;
+    let tgbp_ata = payment_ata(&listing_vault_pda(0), &tgbp_mint());
+    let rent = svm.get_account(&tgbp_ata).unwrap().lamports;
     let before = svm.get_account(&sponsor().pubkey()).unwrap().lamports;
 
     ok(
         &mut svm,
-        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]),
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint()]),
         &cranker,
         &[&cranker],
     );
 
-    for ata in [tgbp_ata, gbp6_ata] {
-        assert!(svm
-            .get_account(&ata)
-            .map(|a| a.data.is_empty())
-            .unwrap_or(true));
-    }
+    assert!(svm
+        .get_account(&tgbp_ata)
+        .map(|a| a.data.is_empty())
+        .unwrap_or(true));
     let after = svm.get_account(&sponsor().pubkey()).unwrap().lamports;
     assert_eq!(after - before, rent);
 }
@@ -489,7 +512,7 @@ fn a_post_settlement_donation_sweeps_to_the_treasury() {
 
     ok(
         &mut svm,
-        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]),
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint()]),
         &cranker,
         &[&cranker],
     );
@@ -504,7 +527,7 @@ fn an_unsettled_listing_keeps_its_vault_accounts() {
     let cranker = funded(&mut svm);
     fails_with(
         &mut svm,
-        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]),
+        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint()]),
         &cranker,
         &[&cranker],
         "PropertyNotFinalized",
@@ -515,9 +538,8 @@ fn an_unsettled_listing_keeps_its_vault_accounts() {
 fn a_decoy_vault_account_is_rejected() {
     let (mut svm, _admin, _investors) = finalized_property();
     let cranker = funded(&mut svm);
-    let mut ix =
-        close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]);
-    // First triple's vault slot follows the 7 struct accounts.
+    let mut ix = close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint()]);
+    // The triple's vault slot follows the 7 struct accounts.
     ix.accounts[7].pubkey = payment_ata(&cranker.pubkey(), &tgbp_mint());
     fails_with(&mut svm, ix, &cranker, &[&cranker], "WrongTokenAccount");
 }
@@ -526,7 +548,7 @@ fn a_decoy_vault_account_is_rejected() {
 fn rerunning_the_settled_close_is_a_no_op() {
     let (mut svm, _admin, _investors) = finalized_property();
     let cranker = funded(&mut svm);
-    let ix = close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint(), gbp6_mint()]);
+    let ix = close_settled_payment_accounts_ix(&cranker.pubkey(), 0, &[tgbp_mint()]);
     ok(&mut svm, ix.clone(), &cranker, &[&cranker]);
     let before = svm.get_account(&sponsor().pubkey()).unwrap().lamports;
     ok(&mut svm, ix, &cranker, &[&cranker]);
@@ -541,7 +563,7 @@ fn payout_groups_must_match_the_collected_mints() {
     let (mut svm, _admin, developer, _investors, dl, sl, operator) = setup_approved(false);
     let cranker = funded(&mut svm);
 
-    // The second group claims to be tGBP again instead of gbp6.
+    // The payout group names an accepted mint the sale never collected.
     let mut ix = deal_ix(
         &cranker.pubkey(),
         &developer.pubkey(),
@@ -549,6 +571,6 @@ fn payout_groups_must_match_the_collected_mints() {
         &sl.pubkey(),
         &operator.pubkey(),
     );
-    swap_account(&mut ix, gbp6_mint(), tgbp_mint());
+    swap_account(&mut ix, tgbp_mint(), gbp6_mint());
     fails_with(&mut svm, ix, &cranker, &[&cranker], "InvalidMint");
 }

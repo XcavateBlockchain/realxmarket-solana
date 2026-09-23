@@ -22,6 +22,8 @@ fn create_region_makes_proposer_the_operator() {
 
     let region = region_of(&svm, 1);
     assert_eq!(region.owner, operator.pubkey());
+    // The name travels from the proposal to the region.
+    assert_eq!(region.name, REGION_NAME);
     // The bond locked when proposing (DEPOSIT) is now the region's collateral.
     assert_eq!(region.collateral, DEPOSIT);
     // The region state was closed.

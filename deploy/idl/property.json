@@ -5344,7 +5344,7 @@
             "type": "pubkey"
           },
           {
-            "name": "rent_collector",
+            "name": "rent_sponsor",
             "docs": [
               "The sponsor wallet that fronts account rent for holders. Sponsored",
               "closes send their lamports here, not to the holder."
@@ -5469,7 +5469,7 @@
             "type": "pubkey"
           },
           {
-            "name": "rent_collector",
+            "name": "rent_sponsor",
             "type": "pubkey"
           },
           {

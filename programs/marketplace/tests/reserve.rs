@@ -10,6 +10,11 @@ use marketplace::state::ListingStatus;
 
 /// Full pipeline up to an open listing.
 fn setup_listed() -> (LiteSVM, Keypair, Keypair) {
+    setup_listed_in(tgbp_mint())
+}
+
+/// `setup_listed` with the property settling in `mint`.
+fn setup_listed_in(mint: Pubkey) -> (LiteSVM, Keypair, Keypair) {
     let (mut svm, admin, _authority) = setup();
     let operator = funded(&mut svm);
     seed_region(&mut svm, 1, &operator.pubkey());
@@ -17,7 +22,16 @@ fn setup_listed() -> (LiteSVM, Keypair, Keypair) {
     let developer = new_developer(&mut svm, &admin);
     ok(
         &mut svm,
-        list_ix(&developer.pubkey(), 0),
+        list_property_ix_in(
+            &developer.pubkey(),
+            0,
+            1,
+            POSTCODE,
+            mint,
+            SHARE_PRICE,
+            SHARE_AMOUNT,
+            u64::MAX,
+        ),
         &developer,
         &[&developer],
     );
@@ -402,13 +416,36 @@ fn claim_works_with_an_exactly_reserved_balance() {
     assert_eq!(tgbp_balance(&svm, &investor.pubkey()), 0);
 }
 
-// Paying in the 6-decimal mint runs the whole reserve/claim math at a real
-// rescale factor: every component divides by 1_000.
+// The config may accept several mints, but a listing settles in exactly one.
 #[test]
-fn claim_pays_in_the_position_mint() {
+fn reserve_rejects_another_accepted_mint() {
+    let (mut svm, admin, sponsor) = setup_listed();
+    let investor = new_investor(&mut svm, &admin);
+    give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
+    fails_with(
+        &mut svm,
+        reserve_ix_with_mint(
+            &investor.pubkey(),
+            &sponsor.pubkey(),
+            0,
+            10,
+            u64::MAX,
+            gbp6_mint(),
+            gbp6_acc(&investor.pubkey()),
+        ),
+        &sponsor,
+        &[&sponsor, &investor],
+        "PaymentMintMismatch",
+    );
+}
+
+// A listing settling in the 6-decimal mint runs the whole reserve/claim math
+// at a real rescale factor: every component divides by 1_000.
+#[test]
+fn claim_pays_in_the_listing_mint() {
     use anchor_lang::solana_program::program_pack::Pack;
 
-    let (mut svm, admin, sponsor) = setup_listed();
+    let (mut svm, admin, sponsor) = setup_listed_in(gbp6_mint());
     let investor = new_investor(&mut svm, &admin);
     give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
 

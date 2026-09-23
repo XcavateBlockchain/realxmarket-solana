@@ -19,7 +19,7 @@ pub struct RegisterLawyer<'info> {
     pub lawyer: Signer<'info>,
 
     /// The sponsor wallet fronting the registry entry's rent.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
     pub payer: Signer<'info>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
@@ -129,12 +129,12 @@ pub struct UnregisterLawyer<'info> {
 
     /// CHECK: the sponsor wallet that fronted the entry's rent; gets it back
     /// as the entry closes.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [LAWYER_SEED, lawyer.key().as_ref()],
         bump = lawyer_account.bump,
         constraint = lawyer_account.active_cases == 0 @ MarketplaceError::LawyerStillActive,

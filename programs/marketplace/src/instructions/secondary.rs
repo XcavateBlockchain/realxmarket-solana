@@ -20,7 +20,7 @@ use crate::error::MarketplaceError;
 use crate::instructions::buy::{bps_of, scale_to_mint};
 use crate::state::{
     Config, Listing, ListingStatus, PropertyAsset, ShareHolding, ShareListing, LOCK_REASONS,
-    MIN_PAYMENT_DECIMALS, PRICE_DECIMALS,
+    MIN_SHARE_PRICE,
 };
 
 use crate::compliance_guard::require_compliant;
@@ -254,14 +254,11 @@ pub fn relist_shares_handler(
         MarketplaceError::PropertyNotFinalized
     );
     require!(amount > 0, MarketplaceError::InvalidShareAmount);
-    require!(share_price > 0, MarketplaceError::InvalidSharePrice);
-    // Same floor as the primary listing: one whole unit of the
-    // smallest-decimals accepted mint, so no per-share price can rescale to
-    // zero. The full lot must also stay priceable in u64.
     require!(
-        share_price >= 10u64.pow((PRICE_DECIMALS - MIN_PAYMENT_DECIMALS) as u32),
+        share_price >= MIN_SHARE_PRICE,
         MarketplaceError::InvalidSharePrice
     );
+    // The full lot must stay priceable in u64.
     share_price
         .checked_mul(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;
@@ -285,6 +282,7 @@ pub fn relist_shares_handler(
     share_listing.asset_id = asset_id;
     share_listing.seller = ctx.accounts.seller.key();
     share_listing.share_price = share_price;
+    share_listing.payment_mint = ctx.accounts.listing.payment_mint;
     share_listing.amount = amount;
     share_listing.seller_fee_bps = ctx.accounts.region.seller_fee_bps;
     share_listing.buyer_fee_bps = ctx.accounts.region.buyer_fee_bps;
@@ -430,8 +428,9 @@ pub struct BuyRelistedShares<'info> {
     )]
     pub buyer_holding: Box<Account<'info, ShareHolding>>,
 
-    /// CHECK: the mint the buyer pays in; must be on the accepted list, and
-    /// the transfers fail on any account that doesn't match it.
+    /// CHECK: the property's settlement mint; the transfers fail on any
+    /// account that doesn't match it.
+    #[account(address = share_listing.payment_mint @ MarketplaceError::PaymentMintMismatch)]
     pub payment_mint: UncheckedAccount<'info>,
 
     /// CHECK: the buyer's token account the money leaves; the token program
@@ -546,13 +545,6 @@ pub fn buy_relisted_shares_handler<'info>(
         MarketplaceError::NotEnoughSharesListed
     );
     let mint_key = ctx.accounts.payment_mint.key();
-    require!(
-        ctx.accounts
-            .config
-            .accepted_payment_mints
-            .contains(&mint_key),
-        MarketplaceError::MintNotAccepted
-    );
     // The derivation pins moved out of `try_accounts` for stack room.
     require!(
         ctx.accounts.seller_share_account.key()
@@ -1082,7 +1074,7 @@ pub fn send_property_shares_handler<'info>(
 
 /// Reclaim an emptied holding's rent and take it out of the holder count.
 /// Permissionless: once a seller has sold their last share, anyone may
-/// sweep the account, and the rent goes back to the collector that fronted
+/// sweep the account, and the rent goes back to the sponsor that fronted
 /// investor accounts.
 #[derive(Accounts)]
 pub struct CloseShareHolding<'info> {
@@ -1092,8 +1084,8 @@ pub struct CloseShareHolding<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the sponsor wallet holdings' rent returns to, from config.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::WrongPayee)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::WrongPayee)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -1104,7 +1096,7 @@ pub struct CloseShareHolding<'info> {
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [
             SHARE_SEED,
             &holding.asset_id.to_le_bytes(),

@@ -1,27 +1,5 @@
 use anchor_lang::prelude::*;
 
-/// The recognised regions and their on-chain ids.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum RegionIdentifier {
-    England,
-    France,
-    Japan,
-    India,
-}
-
-impl RegionIdentifier {
-    /// Returns the identifier for a raw id, or `None` if it isn't recognised.
-    pub fn from_code(code: u16) -> Option<Self> {
-        match code {
-            1 => Some(RegionIdentifier::England),
-            2 => Some(RegionIdentifier::France),
-            3 => Some(RegionIdentifier::Japan),
-            4 => Some(RegionIdentifier::India),
-            _ => None,
-        }
-    }
-}
-
 /// How a voter can vote on a proposal.
 #[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Vote {
@@ -75,6 +53,9 @@ pub struct Config {
 #[derive(InitSpace)]
 pub struct Region {
     pub region_id: u16,
+    /// Display name, e.g. the country, copied from the proposal.
+    #[max_len(MAX_REGION_NAME_LEN)]
+    pub name: String,
     pub owner: Pubkey,
     /// The operator's bonded XCAV plus the location deposits, held in the
     /// vault. Returned when the seat changes hands.
@@ -139,6 +120,10 @@ pub enum RegionStatus {
 #[derive(InitSpace)]
 pub struct RegionState {
     pub region_id: u16,
+    /// The name put to the vote. Ids are proposer-chosen, so this is what
+    /// tells voters which region the id stands for.
+    #[max_len(MAX_REGION_NAME_LEN)]
+    pub name: String,
     pub status: RegionStatus,
     /// The proposal this region is voting on.
     pub proposal_id: u64,
@@ -187,6 +172,9 @@ pub struct Location {
 
 /// Longest postcode accepted for a location.
 pub const POSTCODE_MAX_LEN: usize = 10;
+
+/// Longest region name accepted at proposal time.
+pub const MAX_REGION_NAME_LEN: usize = 32;
 
 /// The XCAV bond an operator must lock to run a region: 0.1% of the current
 /// supply. Returns `None` if the supply is too small to produce a positive bond.

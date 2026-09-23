@@ -11,7 +11,7 @@ use crate::state::{
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ConfigParams {
     pub treasury: Pubkey,
-    pub rent_collector: Pubkey,
+    pub rent_sponsor: Pubkey,
     pub accepted_payment_mints: Vec<Pubkey>,
     pub listing_deposit: u64,
     pub lawyer_deposit: u64,
@@ -32,7 +32,7 @@ impl ConfigParams {
     /// authority sets them.
     fn validate(&self) -> Result<()> {
         require!(
-            self.treasury != Pubkey::default() && self.rent_collector != Pubkey::default(),
+            self.treasury != Pubkey::default() && self.rent_sponsor != Pubkey::default(),
             MarketplaceError::InvalidConfig
         );
         require!(
@@ -78,7 +78,7 @@ impl ConfigParams {
 
     fn apply(&self, config: &mut Config) {
         config.treasury = self.treasury;
-        config.rent_collector = self.rent_collector;
+        config.rent_sponsor = self.rent_sponsor;
         config.accepted_payment_mints = self.accepted_payment_mints.clone();
         config.listing_deposit = self.listing_deposit;
         config.lawyer_deposit = self.lawyer_deposit;

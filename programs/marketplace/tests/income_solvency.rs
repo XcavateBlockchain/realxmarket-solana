@@ -33,7 +33,7 @@ fn income_vault_pda() -> Pubkey {
 }
 
 /// Write the property program's config directly. The income gates read the
-/// treasury and rent collector from it and nothing else.
+/// treasury and rent sponsor from it and nothing else.
 fn seed_property_config(svm: &mut LiteSVM) {
     let (address, bump) =
         Pubkey::find_program_address(&[b"config"], &marketplace::PROPERTY_PROGRAM);
@@ -42,7 +42,7 @@ fn seed_property_config(svm: &mut LiteSVM) {
         pending_authority: None,
         xcav_mint: xcav_mint(),
         treasury: treasury(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         agent_deposit: 0,
         agent_voting_time: 10_000,
         min_voting_quorum_bps: 2_500,

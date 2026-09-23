@@ -109,12 +109,13 @@ fn make_offer_validates_the_bid() {
             tgbp_acc(&offeror.pubkey()),
             "NotEnoughSharesListed",
         ),
+        // Accepted by the config, but not what this property settles in.
         (
             10,
             BID,
-            xcav_mint(),
-            token_acc(&offeror.pubkey()),
-            "MintNotAccepted",
+            gbp6_mint(),
+            gbp6_acc(&offeror.pubkey()),
+            "PaymentMintMismatch",
         ),
     ];
     for (amount, price, mint, account, expected) in cases {

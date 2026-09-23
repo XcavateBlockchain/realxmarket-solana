@@ -11,8 +11,8 @@ pub enum RegionsError {
     /// The supplied mint is not the configured XCAV mint.
     #[msg("Invalid XCAV mint")]
     InvalidMint,
-    /// The region id is not one of the recognised regions.
-    #[msg("Unknown region")]
+    /// The region id is zero, which is reserved.
+    #[msg("Region id must be nonzero")]
     InvalidRegion,
     /// A region with this id already exists.
     #[msg("Region already created")]
@@ -89,4 +89,7 @@ pub enum RegionsError {
     /// The vote landed inside the minimum hold window before expiry.
     #[msg("Too close to the proposal expiry to vote")]
     VoteTooLate,
+    /// The region name is empty or too long.
+    #[msg("Invalid region name")]
+    InvalidRegionName,
 }

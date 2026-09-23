@@ -24,8 +24,10 @@ fn propose_new_region_works() {
     assert_eq!(proposal.proposer, operator.pubkey());
     assert_eq!(proposal.region_id, 1);
     assert_eq!(proposal.yes_power, 0);
-    // The bond is tracked on the region state.
-    assert_eq!(region_state_of(&svm, 1).deposit, DEPOSIT);
+    // The bond and the name are tracked on the region state.
+    let state = region_state_of(&svm, 1);
+    assert_eq!(state.deposit, DEPOSIT);
+    assert_eq!(state.name, REGION_NAME);
     // Bond moved from proposer into the vault.
     assert_eq!(op_before - xcav_balance(&svm, &operator.pubkey()), DEPOSIT);
     assert_eq!(vault_balance(&svm), DEPOSIT);
@@ -48,16 +50,47 @@ fn propose_fails_for_non_operator() {
     );
 }
 
+// Any nonzero id may be proposed; zero is reserved.
 #[test]
-fn propose_fails_for_unknown_region() {
+fn propose_accepts_any_nonzero_id_and_rejects_zero() {
     let (mut svm, operator, _authority) = setup();
     let id = next_proposal_id(&svm);
     fails_with(
         &mut svm,
-        propose_ix(&operator.pubkey(), 99, id),
+        propose_ix(&operator.pubkey(), 0, id),
         &operator,
         &[&operator],
         "InvalidRegion",
+    );
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 999, id),
+        &operator,
+        &[&operator],
+    );
+    assert_eq!(region_state_of(&svm, 999).region_id, 999);
+}
+
+#[test]
+fn propose_rejects_bad_names() {
+    let (mut svm, operator, _authority) = setup();
+    let id = next_proposal_id(&svm);
+    let too_long = "A".repeat(regions::state::MAX_REGION_NAME_LEN + 1);
+    for name in ["", too_long.as_str()] {
+        fails_with(
+            &mut svm,
+            propose_ix_named(&operator.pubkey(), 1, name, id, u64::MAX),
+            &operator,
+            &[&operator],
+            "InvalidRegionName",
+        );
+    }
+    let max = "A".repeat(regions::state::MAX_REGION_NAME_LEN);
+    ok(
+        &mut svm,
+        propose_ix_named(&operator.pubkey(), 1, &max, id, u64::MAX),
+        &operator,
+        &[&operator],
     );
 }
 

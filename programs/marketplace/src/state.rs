@@ -26,11 +26,10 @@ pub struct Config {
     pub treasury: Pubkey,
     /// The sponsor wallet that fronts account rent for investors. Every
     /// position close sends its lamports here, not to the investor.
-    pub rent_collector: Pubkey,
-    /// Mints a property can be priced and paid in. Every entry must be a
-    /// same-value GBP stablecoin: prices convert between them by decimal
-    /// count alone, so adding a mint of different value would misprice every
-    /// open listing.
+    pub rent_sponsor: Pubkey,
+    /// Mints a listing may settle in. Each listing picks exactly one, so the
+    /// entries need not share a value, and a change here only affects new
+    /// listings.
     #[max_len(MAX_PAYMENT_MINTS)]
     pub accepted_payment_mints: Vec<Pubkey>,
     /// XCAV a developer locks to list a property.
@@ -182,8 +181,11 @@ pub struct Listing {
     pub listing_id: u64,
     pub developer: Pubkey,
     pub asset_id: u64,
-    /// Price per share, in payment-mint base units.
+    /// Price per share, quoted at `PRICE_DECIMALS`.
     pub share_price: u64,
+    /// The one mint this sale settles in, picked by the developer from the
+    /// config allowlist. Fixed for the life of the listing.
+    pub payment_mint: Pubkey,
     /// Shares put up for sale.
     pub listed_share_amount: u32,
     /// Shares sold (paid for) so far.
@@ -369,10 +371,9 @@ pub struct LawyerVote {
     pub bump: u8,
 }
 
-/// Prices are quoted at this scale (tGBP's 9 decimals); transfers rescale to
-/// each payment mint's own decimals, flooring in the investor's favour. The
-/// rescale is by decimal count alone, which is only sound because every
-/// accepted payment mint must be a same-value GBP stablecoin.
+/// Prices are quoted at this scale (tGBP's 9 decimals) in the listing's own
+/// mint. Transfers rescale to that mint's decimals, flooring in the
+/// investor's favour.
 pub const PRICE_DECIMALS: u8 = 9;
 
 /// Accepted payment mints must sit in this decimals range: the lower bound
@@ -380,6 +381,10 @@ pub const PRICE_DECIMALS: u8 = 9;
 /// the rescale arithmetic comfortably inside u128.
 pub const MIN_PAYMENT_DECIMALS: u8 = 6;
 pub const MAX_PAYMENT_DECIMALS: u8 = 12;
+
+/// Lowest share price that still charges one base unit of the lowest-decimal
+/// accepted mint.
+pub const MIN_SHARE_PRICE: u64 = 10u64.pow((PRICE_DECIMALS - MIN_PAYMENT_DECIMALS) as u32);
 
 /// Why shares are locked. Each reason keeps its own counter on the holding
 /// and the effective lock is the largest of them, so backing one vote never
@@ -444,6 +449,9 @@ pub struct ShareListing {
     pub seller: Pubkey,
     /// Asking price per share, in quote units.
     pub share_price: u64,
+    /// The property's settlement mint, copied from the primary listing so
+    /// every trade of a property runs in one currency.
+    pub payment_mint: Pubkey,
     /// Shares still for sale; partial buys draw it down.
     pub amount: u32,
     /// The region's seller fee at listing time, so a later fee change

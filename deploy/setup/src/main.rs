@@ -36,6 +36,7 @@ const XCAV: u64 = 1_000_000_000; // 9 decimals
 const COMPLIANCE_PERIOD: i64 = 90 * 86_400;
 
 const REGION_ID: u16 = 1;
+const REGION_NAME: &str = "England";
 const POSTCODES: [&[u8]; 2] = [b"SW1A1AA", b"M11AE"];
 const LISTING_DURATION: i64 = 30 * 86_400;
 const REGION_TAX_BPS: u16 = 300;
@@ -68,7 +69,7 @@ fn marketplace_params(
 ) -> marketplace::instructions::ConfigParams {
     marketplace::instructions::ConfigParams {
         treasury,
-        rent_collector: sponsor,
+        rent_sponsor: sponsor,
         accepted_payment_mints: payment_mints,
         listing_deposit: 100 * XCAV,
         lawyer_deposit: 100 * XCAV,
@@ -92,7 +93,7 @@ fn property_params(treasury: Pubkey, sponsor: Pubkey) -> property::instructions:
     const GBP: u64 = 1_000_000_000;
     property::instructions::ConfigParams {
         treasury,
-        rent_collector: sponsor,
+        rent_sponsor: sponsor,
         agent_deposit: 50 * XCAV,
         agent_voting_time: 600,
         min_voting_quorum_bps: 1_000,
@@ -501,6 +502,7 @@ fn main() {
                     regions::ID,
                     &regions::instruction::ProposeNewRegion {
                         region_id: REGION_ID,
+                        name: REGION_NAME.to_string(),
                         max_deposit: u64::MAX,
                     }
                     .data(),

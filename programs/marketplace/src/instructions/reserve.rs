@@ -31,7 +31,7 @@ pub struct ReserveShares<'info> {
     pub investor: Signer<'info>,
 
     /// The sponsor wallet fronting rent for the investor's accounts.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
     pub payer: Signer<'info>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
@@ -82,7 +82,8 @@ pub struct ReserveShares<'info> {
     )]
     pub position: Box<Account<'info, InvestorPosition>>,
 
-    /// The mint the investor will pay in; must be on the accepted list.
+    /// The listing's settlement mint.
+    #[account(address = listing.payment_mint @ MarketplaceError::PaymentMintMismatch)]
     pub payment_mint: Box<InterfaceAccount<'info, Mint>>,
 
     /// The investor's payment account the reservation binds.
@@ -140,18 +141,10 @@ pub fn reserve_shares_handler(
         !ctx.accounts.position.cancelled,
         MarketplaceError::PositionCancelled
     );
-    require!(
-        ctx.accounts
-            .config
-            .accepted_payment_mints
-            .contains(&ctx.accounts.payment_mint.key()),
-        MarketplaceError::MintNotAccepted
-    );
     let position_exists = ctx.accounts.position.investor != Pubkey::default();
     if position_exists {
         require!(
-            ctx.accounts.position.payment_mint == ctx.accounts.payment_mint.key()
-                && ctx.accounts.position.payment_account == ctx.accounts.investor_payment.key(),
+            ctx.accounts.position.payment_account == ctx.accounts.investor_payment.key(),
             MarketplaceError::PaymentMintMismatch
         );
     }
@@ -250,7 +243,7 @@ pub struct ClaimShares<'info> {
     pub investor: Signer<'info>,
 
     /// The sponsor wallet fronting rent for the investor's accounts.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
     pub payer: Signer<'info>,
 
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
@@ -658,8 +651,8 @@ pub struct ReleaseReservation<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the sponsor wallet that fronted the position's rent.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -670,7 +663,7 @@ pub struct ReleaseReservation<'info> {
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [POSITION_SEED, &listing_id.to_le_bytes(), investor.as_ref()],
         bump = position.bump,
     )]
@@ -761,12 +754,12 @@ pub struct CloseReservation<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the sponsor wallet that fronted the reservation's rent.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [RESERVATION_SEED, reservation.token_account.as_ref()],
         bump = reservation.bump,
         constraint = reservation.amount == 0 @ MarketplaceError::NothingReserved,
@@ -792,8 +785,8 @@ pub struct CloseCancelledPosition<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the sponsor wallet that fronted the position's rent.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -804,7 +797,7 @@ pub struct CloseCancelledPosition<'info> {
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [POSITION_SEED, &listing_id.to_le_bytes(), investor.as_ref()],
         bump = position.bump,
         constraint = position.cancelled @ MarketplaceError::PositionNotCancelled,

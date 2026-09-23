@@ -236,7 +236,7 @@ pub fn treasury() -> Pubkey {
 }
 
 /// The sponsor wallet fronting holder rent. Deterministic, so
-/// `default_params` can name it as the rent collector.
+/// `default_params` can name it as the rent sponsor.
 pub fn sponsor() -> Keypair {
     Keypair::new_from_array([42u8; 32])
 }
@@ -580,7 +580,7 @@ pub fn seed_market_config(svm: &mut LiteSVM, accepted: &[Pubkey]) {
         pending_authority: None,
         xcav_mint: xcav_mint(),
         treasury: treasury(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         accepted_payment_mints: accepted.to_vec(),
         listing_deposit: 0,
         lawyer_deposit: 0,
@@ -782,7 +782,7 @@ pub fn seed_checkpoint(
 pub fn default_params() -> ConfigParams {
     ConfigParams {
         treasury: treasury(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         agent_deposit: AGENT_DEPOSIT,
         agent_voting_time: VOTING_TIME,
         min_voting_quorum_bps: QUORUM_BPS,

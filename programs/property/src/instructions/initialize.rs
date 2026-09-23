@@ -9,7 +9,7 @@ use crate::state::Config;
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ConfigParams {
     pub treasury: Pubkey,
-    pub rent_collector: Pubkey,
+    pub rent_sponsor: Pubkey,
     pub agent_deposit: u64,
     pub agent_voting_time: i64,
     pub min_voting_quorum_bps: u16,
@@ -26,7 +26,7 @@ pub struct ConfigParams {
 impl ConfigParams {
     fn validate(&self) -> Result<()> {
         require!(
-            self.treasury != Pubkey::default() && self.rent_collector != Pubkey::default(),
+            self.treasury != Pubkey::default() && self.rent_sponsor != Pubkey::default(),
             PropertyError::InvalidConfig
         );
         require!(self.agent_deposit > 0, PropertyError::InvalidConfig);
@@ -54,7 +54,7 @@ impl ConfigParams {
 
     fn apply(&self, config: &mut Config) {
         config.treasury = self.treasury;
-        config.rent_collector = self.rent_collector;
+        config.rent_sponsor = self.rent_sponsor;
         config.agent_deposit = self.agent_deposit;
         config.agent_voting_time = self.agent_voting_time;
         config.min_voting_quorum_bps = self.min_voting_quorum_bps;

@@ -4,7 +4,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use crate::constants::{CONFIG_SEED, PROPOSAL_SEED, REGION_SEED, REGION_STATE_SEED, VAULT_SEED};
 use crate::error::RegionsError;
 use crate::state::{
-    operator_bond, Config, RegionIdentifier, RegionProposal, RegionState, RegionStatus,
+    operator_bond, Config, RegionProposal, RegionState, RegionStatus, MAX_REGION_NAME_LEN,
 };
 use crate::vault::lock_to_vault;
 
@@ -12,8 +12,10 @@ use xcavate_whitelist::state::{Role, RoleAccount};
 
 /// Propose a new region. The caller must be a RegionalOperator, the region must
 /// not already exist, and there must be no other open proposal for it. The
-/// proposer bonds 0.1% of the XCAV supply into the vault; it is returned if the
-/// proposal is rejected and becomes the region's collateral once claimed.
+/// proposer picks the id and the name, and the vote decides whether the region
+/// is legitimate. The proposer bonds 0.1% of the XCAV supply into the vault; it
+/// is returned if the proposal is rejected and becomes the region's collateral
+/// once claimed.
 #[derive(Accounts)]
 #[instruction(region_id: u16)]
 pub struct ProposeNewRegion<'info> {
@@ -90,11 +92,14 @@ pub struct ProposeNewRegion<'info> {
 pub fn propose_new_region_handler(
     ctx: Context<ProposeNewRegion>,
     region_id: u16,
+    name: String,
     max_deposit: u64,
 ) -> Result<()> {
+    // Zero is reserved so an unset region id can never match a real one.
+    require!(region_id != 0, RegionsError::InvalidRegion);
     require!(
-        RegionIdentifier::from_code(region_id).is_some(),
-        RegionsError::InvalidRegion
+        !name.is_empty() && name.len() <= MAX_REGION_NAME_LEN,
+        RegionsError::InvalidRegionName
     );
 
     let clock = Clock::get()?;
@@ -133,6 +138,7 @@ pub fn propose_new_region_handler(
 
     let region_state = &mut ctx.accounts.region_state;
     region_state.region_id = region_id;
+    region_state.name = name.clone();
     region_state.status = RegionStatus::Proposing;
     region_state.proposal_id = proposal_id;
     region_state.proposer = ctx.accounts.proposer.key();
@@ -145,6 +151,7 @@ pub fn propose_new_region_handler(
 
     emit!(RegionProposed {
         region_id,
+        name,
         proposal_id,
         proposer: ctx.accounts.proposer.key(),
         expiry: proposal.expiry,
@@ -155,6 +162,7 @@ pub fn propose_new_region_handler(
 #[event]
 pub struct RegionProposed {
     pub region_id: u16,
+    pub name: String,
     pub proposal_id: u64,
     pub proposer: Pubkey,
     pub expiry: i64,

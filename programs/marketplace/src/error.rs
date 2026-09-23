@@ -69,9 +69,9 @@ pub enum MarketplaceError {
     /// The position was paid in a different mint.
     #[msg("Position uses a different payment mint")]
     PaymentMintMismatch,
-    /// The rent payer is not the configured rent collector.
-    #[msg("Payer is not the rent collector")]
-    NotRentCollector,
+    /// The rent payer is not the configured rent sponsor.
+    #[msg("Payer is not the rent sponsor")]
+    NotRentSponsor,
     /// The position holds no shares to return.
     #[msg("Nothing to unreserve")]
     NothingToUnreserve,

@@ -249,7 +249,7 @@ fn buy_validates_the_request() {
         ),
         &buyer,
         &[&buyer],
-        "MintNotAccepted",
+        "PaymentMintMismatch",
     );
 }
 
@@ -282,6 +282,33 @@ fn buy_respects_the_ownership_cap() {
         &[buyer],
     );
     assert_eq!(holding_of(&svm, 0, &buyer.pubkey()).amount, 49);
+}
+
+// Secondary trades settle in the property's mint, whatever else the config
+// accepts.
+#[test]
+fn buy_rejects_another_accepted_mint() {
+    let (mut svm, admin, investors) = finalized_property();
+    let seller = &investors[1];
+    relist(&mut svm, seller, 0, 20);
+    let buyer = new_investor(&mut svm, &admin);
+    give_gbp6(&mut svm, &buyer.pubkey(), 1_000_000_000);
+    fails_with(
+        &mut svm,
+        buy_relisted_ix_with_mint(
+            &buyer.pubkey(),
+            0,
+            0,
+            &seller.pubkey(),
+            5,
+            u64::MAX,
+            gbp6_mint(),
+            gbp6_acc(&buyer.pubkey()),
+        ),
+        &buyer,
+        &[&buyer],
+        "PaymentMintMismatch",
+    );
 }
 
 #[test]

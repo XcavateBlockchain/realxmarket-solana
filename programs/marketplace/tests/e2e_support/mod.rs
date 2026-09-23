@@ -184,7 +184,7 @@ pub fn regions_params() -> regions::instructions::ConfigParams {
 pub fn property_params() -> property::ConfigParams {
     property::ConfigParams {
         treasury: treasury(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         agent_deposit: AGENT_DEPOSIT,
         agent_voting_time: AGENT_VOTING_TIME,
         min_voting_quorum_bps: 2_500,
@@ -227,6 +227,7 @@ pub fn propose_region_ix(proposer: &Pubkey, region_id: u16, proposal_id: u64) ->
         rid(),
         &regions::instruction::ProposeNewRegion {
             region_id,
+            name: "England".to_string(),
             max_deposit: u64::MAX,
         }
         .data(),

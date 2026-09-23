@@ -36,6 +36,7 @@ fn list_property_creates_listing_and_locks_deposit() {
     assert_eq!(listing.listing_id, 0);
     assert_eq!(listing.developer, developer.pubkey());
     assert_eq!(listing.share_price, SHARE_PRICE);
+    assert_eq!(listing.payment_mint, tgbp_mint());
     assert_eq!(listing.listed_share_amount, SHARE_AMOUNT);
     assert_eq!(listing.sold_share_amount, 0);
     // Snapshots from the seeded region: 300 bps tax, 100 bps fees each
@@ -302,7 +303,7 @@ fn list_rejects_deposit_above_cap() {
 }
 
 // A price below one base unit of the lowest-decimal accepted mint would floor
-// to a zero charge, so listing refuses it.
+// to a zero charge, so listing and repricing both refuse it.
 #[test]
 fn list_rejects_price_below_min_scale() {
     let (mut svm, _admin, _authority, developer) = setup_listing();
@@ -312,6 +313,40 @@ fn list_rejects_price_below_min_scale() {
         &developer,
         &[&developer],
         "InvalidSharePrice",
+    );
+    ok(
+        &mut svm,
+        list_ix(&developer.pubkey(), 0),
+        &developer,
+        &[&developer],
+    );
+    fails_with(
+        &mut svm,
+        upgrade_ix(&developer.pubkey(), 0, 999),
+        &developer,
+        &[&developer],
+        "InvalidSharePrice",
+    );
+}
+
+#[test]
+fn list_rejects_mint_outside_the_allowlist() {
+    let (mut svm, _admin, _authority, developer) = setup_listing();
+    fails_with(
+        &mut svm,
+        list_property_ix_in(
+            &developer.pubkey(),
+            0,
+            1,
+            POSTCODE,
+            xcav_mint(),
+            SHARE_PRICE,
+            SHARE_AMOUNT,
+            u64::MAX,
+        ),
+        &developer,
+        &[&developer],
+        "MintNotAccepted",
     );
 }
 

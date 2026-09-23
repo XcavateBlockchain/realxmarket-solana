@@ -1166,8 +1166,8 @@
     {
       "name": "propose_new_region",
       "docs": [
-        "Propose a new region. RegionalOperator-only; bonds 0.1% of XCAV supply,",
-        "capped by the caller's `max_deposit`."
+        "Propose a new region under a caller-chosen id and name.",
+        "RegionalOperator-only; bonds 0.1% of XCAV supply, capped by `max_deposit`."
       ],
       "discriminator": [
         28,
@@ -1333,6 +1333,10 @@
         {
           "name": "region_id",
           "type": "u16"
+        },
+        {
+          "name": "name",
+          "type": "string"
         },
         {
           "name": "max_deposit",
@@ -2212,7 +2216,7 @@
     {
       "code": 6003,
       "name": "InvalidRegion",
-      "msg": "Unknown region"
+      "msg": "Region id must be nonzero"
     },
     {
       "code": 6004,
@@ -2338,6 +2342,11 @@
       "code": 6028,
       "name": "VoteTooLate",
       "msg": "Too close to the proposal expiry to vote"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidRegionName",
+      "msg": "Invalid region name"
     }
   ],
   "types": [
@@ -2701,6 +2710,13 @@
             "type": "u16"
           },
           {
+            "name": "name",
+            "docs": [
+              "Display name, e.g. the country, copied from the proposal."
+            ],
+            "type": "string"
+          },
+          {
             "name": "owner",
             "type": "pubkey"
           },
@@ -2952,6 +2968,10 @@
             "type": "u16"
           },
           {
+            "name": "name",
+            "type": "string"
+          },
+          {
             "name": "proposal_id",
             "type": "u64"
           },
@@ -2980,6 +3000,14 @@
           {
             "name": "region_id",
             "type": "u16"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "The name put to the vote. Ids are proposer-chosen, so this is what",
+              "tells voters which region the id stands for."
+            ],
+            "type": "string"
           },
           {
             "name": "status",

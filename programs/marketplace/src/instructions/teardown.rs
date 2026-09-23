@@ -38,8 +38,8 @@ pub struct CloseDeadListing<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the sponsor wallet; receives the payment accounts' rent.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     /// CHECK: the developer who paid the listing-side rent; receives it back.
     #[account(mut, address = listing.developer @ MarketplaceError::NotListingDeveloper)]
@@ -208,7 +208,7 @@ pub fn close_dead_listing_handler<'info>(
         &ctx.accounts.listing_vault,
         listing_vault_seeds,
         &ctx.accounts.config.treasury,
-        &ctx.accounts.rent_collector,
+        &ctx.accounts.rent_sponsor,
         &ctx.accounts.share_token_program.key(),
         &ctx.accounts.payment_token_program.key(),
         sweep_allowed,
@@ -238,8 +238,8 @@ pub struct CloseSettledPaymentAccounts<'info> {
     pub config: Box<Account<'info, Config>>,
 
     /// CHECK: the sponsor wallet; receives the payment accounts' rent.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         seeds = [LISTING_SEED, &listing_id.to_le_bytes()],
@@ -274,7 +274,7 @@ pub fn close_settled_payment_accounts_handler<'info>(
         &ctx.accounts.listing_vault,
         listing_vault_seeds,
         &ctx.accounts.config.treasury,
-        &ctx.accounts.rent_collector,
+        &ctx.accounts.rent_sponsor,
         &ctx.accounts.share_token_program.key(),
         &ctx.accounts.payment_token_program.key(),
         true,
@@ -296,7 +296,7 @@ fn close_vault_payment_accounts<'info>(
     listing_vault: &UncheckedAccount<'info>,
     listing_vault_seeds: &[&[u8]],
     treasury: &Pubkey,
-    rent_collector: &UncheckedAccount<'info>,
+    rent_sponsor: &UncheckedAccount<'info>,
     share_token_program: &Pubkey,
     payment_token_program: &Pubkey,
     sweep_allowed: bool,
@@ -372,7 +372,7 @@ fn close_vault_payment_accounts<'info>(
             *token_program,
             ClosePaymentAccount {
                 account: vault_account.clone(),
-                destination: rent_collector.to_account_info(),
+                destination: rent_sponsor.to_account_info(),
                 authority: listing_vault.to_account_info(),
             },
             &[listing_vault_seeds],

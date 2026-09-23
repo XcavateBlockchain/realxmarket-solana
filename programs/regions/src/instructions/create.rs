@@ -101,6 +101,7 @@ pub fn create_region_handler(
 
     let region = &mut ctx.accounts.region;
     region.region_id = region_id;
+    region.name = ctx.accounts.region_state.name.clone();
     region.owner = ctx.accounts.creator.key();
     region.collateral = collateral;
     region.location_collateral = 0;

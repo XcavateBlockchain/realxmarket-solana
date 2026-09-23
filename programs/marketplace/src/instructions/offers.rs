@@ -22,7 +22,7 @@ use crate::instructions::buy::{bps_of, scale_to_mint};
 use crate::instructions::secondary::{move_shares, require_pda, settle_income};
 use crate::state::{
     Config, Listing, ListingStatus, Offer, PropertyAsset, ShareHolding, ShareListing, LOCK_REASONS,
-    MIN_PAYMENT_DECIMALS, PRICE_DECIMALS,
+    MIN_SHARE_PRICE,
 };
 
 use crate::compliance_guard::require_compliant;
@@ -127,9 +127,6 @@ pub struct MakeOffer<'info> {
     )]
     pub offeror_compliance: Box<Account<'info, Compliance>>,
 
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
-    pub config: Box<Account<'info, Config>>,
-
     #[account(
         mut,
         seeds = [SHARE_LISTING_SEED, &id.to_le_bytes()],
@@ -151,7 +148,8 @@ pub struct MakeOffer<'info> {
     #[account(seeds = [OFFER_VAULT_SEED, &id.to_le_bytes(), offeror.key().as_ref()], bump)]
     pub offer_vault: UncheckedAccount<'info>,
 
-    /// CHECK: the mint the bid is made in; must be on the accepted list.
+    /// CHECK: the property's settlement mint, from the share listing.
+    #[account(address = share_listing.payment_mint @ MarketplaceError::PaymentMintMismatch)]
     pub payment_mint: UncheckedAccount<'info>,
 
     /// CHECK: the bidder's token account the bid leaves; the token program
@@ -176,9 +174,8 @@ pub fn make_offer_handler(
     share_price: u64,
 ) -> Result<()> {
     require!(amount > 0, MarketplaceError::InvalidShareAmount);
-    // Same price floor as listings, so no bid can rescale to zero.
     require!(
-        share_price >= 10u64.pow((PRICE_DECIMALS - MIN_PAYMENT_DECIMALS) as u32),
+        share_price >= MIN_SHARE_PRICE,
         MarketplaceError::InvalidSharePrice
     );
     let share_listing = &mut ctx.accounts.share_listing;
@@ -191,14 +188,6 @@ pub fn make_offer_handler(
         MarketplaceError::NotEnoughSharesListed
     );
     let mint_key = ctx.accounts.payment_mint.key();
-    require!(
-        ctx.accounts
-            .config
-            .accepted_payment_mints
-            .contains(&mint_key),
-        MarketplaceError::MintNotAccepted
-    );
-
     let total_quote = share_price
         .checked_mul(amount as u64)
         .ok_or(MarketplaceError::Overflow)?;

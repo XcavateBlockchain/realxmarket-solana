@@ -690,7 +690,7 @@
           "name": "payer",
           "docs": [
             "The sponsor wallet fronting rent for the investor's accounts. Fixed to",
-            "the configured rent collector, so the wallet paying the rent is also",
+            "the configured rent sponsor, so the wallet paying the rent is also",
             "the one refunded when the accounts close."
           ],
           "writable": true,
@@ -890,7 +890,7 @@
         {
           "name": "payment_mint",
           "docs": [
-            "The mint the investor pays in; must be on the accepted list."
+            "The listing's settlement mint."
           ]
         },
         {
@@ -1308,7 +1308,7 @@
         {
           "name": "payment_mint",
           "docs": [
-            "the transfers fail on any account that doesn't match it."
+            "account that doesn't match it."
           ]
         },
         {
@@ -2292,7 +2292,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "writable": true
         },
         {
@@ -2582,7 +2582,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "writable": true
         },
         {
@@ -2792,7 +2792,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "writable": true
         },
         {
@@ -2863,7 +2863,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "writable": true
         },
         {
@@ -2972,7 +2972,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "writable": true
         },
         {
@@ -4303,6 +4303,12 @@
           }
         },
         {
+          "name": "payment_mint",
+          "docs": [
+            "The mint the sale settles in, from the config allowlist."
+          ]
+        },
+        {
           "name": "xcav_mint",
           "docs": [
             "The XCAV mint (for `transfer_checked`)."
@@ -4589,24 +4595,6 @@
                 97
               ]
             }
-          }
-        },
-        {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
           }
         },
         {
@@ -5131,7 +5119,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "writable": true
         },
         {
@@ -5729,7 +5717,7 @@
         {
           "name": "payment_mint",
           "docs": [
-            "The mint the investor will pay in; must be on the accepted list."
+            "The listing's settlement mint."
           ]
         },
         {
@@ -6803,7 +6791,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "docs": [
             "as the entry closes."
           ],
@@ -7415,7 +7403,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "docs": [
             "back as they close."
           ],
@@ -7843,7 +7831,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "docs": [
             "back as they close."
           ],
@@ -8159,7 +8147,7 @@
           }
         },
         {
-          "name": "rent_collector",
+          "name": "rent_sponsor",
           "docs": [
             "back as they close."
           ],
@@ -9272,8 +9260,8 @@
     },
     {
       "code": 6022,
-      "name": "NotRentCollector",
-      "msg": "Payer is not the rent collector"
+      "name": "NotRentSponsor",
+      "msg": "Payer is not the rent sponsor"
     },
     {
       "code": 6023,
@@ -9863,7 +9851,7 @@
             "type": "pubkey"
           },
           {
-            "name": "rent_collector",
+            "name": "rent_sponsor",
             "docs": [
               "The sponsor wallet that fronts account rent for investors. Every",
               "position close sends its lamports here, not to the investor."
@@ -9873,10 +9861,9 @@
           {
             "name": "accepted_payment_mints",
             "docs": [
-              "Mints a property can be priced and paid in. Every entry must be a",
-              "same-value GBP stablecoin: prices convert between them by decimal",
-              "count alone, so adding a mint of different value would misprice every",
-              "open listing."
+              "Mints a listing may settle in. Each listing picks exactly one, so the",
+              "entries need not share a value, and a change here only affects new",
+              "listings."
             ],
             "type": {
               "vec": "pubkey"
@@ -10016,7 +10003,7 @@
             "type": "pubkey"
           },
           {
-            "name": "rent_collector",
+            "name": "rent_sponsor",
             "type": "pubkey"
           },
           {
@@ -10660,9 +10647,17 @@
           {
             "name": "share_price",
             "docs": [
-              "Price per share, in payment-mint base units."
+              "Price per share, quoted at `PRICE_DECIMALS`."
             ],
             "type": "u64"
+          },
+          {
+            "name": "payment_mint",
+            "docs": [
+              "The one mint this sale settles in, picked by the developer from the",
+              "config allowlist. Fixed for the life of the listing."
+            ],
+            "type": "pubkey"
           },
           {
             "name": "listed_share_amount",
@@ -11352,6 +11347,10 @@
             "type": "u16"
           },
           {
+            "name": "payment_mint",
+            "type": "pubkey"
+          },
+          {
             "name": "share_price",
             "type": "u64"
           },
@@ -11441,6 +11440,13 @@
           {
             "name": "region_id",
             "type": "u16"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Display name, e.g. the country, copied from the proposal."
+            ],
+            "type": "string"
           },
           {
             "name": "owner",
@@ -11787,6 +11793,14 @@
               "Asking price per share, in quote units."
             ],
             "type": "u64"
+          },
+          {
+            "name": "payment_mint",
+            "docs": [
+              "The property's settlement mint, copied from the primary listing so",
+              "every trade of a property runs in one currency."
+            ],
+            "type": "pubkey"
           },
           {
             "name": "amount",

@@ -26,6 +26,11 @@ fn total_of(amount: u32) -> u64 {
 /// Full pipeline: region + location + compliant developer + listed property
 /// with its share mint live, plus a sponsor wallet that fronts investor rent.
 fn setup_listed() -> (LiteSVM, Keypair, Keypair) {
+    setup_listed_in(tgbp_mint())
+}
+
+/// `setup_listed` with the property settling in `mint`.
+fn setup_listed_in(mint: Pubkey) -> (LiteSVM, Keypair, Keypair) {
     let (mut svm, admin, _authority) = setup();
     let operator = funded(&mut svm);
     seed_region(&mut svm, 1, &operator.pubkey());
@@ -33,7 +38,16 @@ fn setup_listed() -> (LiteSVM, Keypair, Keypair) {
     let developer = new_developer(&mut svm, &admin);
     ok(
         &mut svm,
-        list_ix(&developer.pubkey(), 0),
+        list_property_ix_in(
+            &developer.pubkey(),
+            0,
+            1,
+            POSTCODE,
+            mint,
+            SHARE_PRICE,
+            SHARE_AMOUNT,
+            u64::MAX,
+        ),
         &developer,
         &[&developer],
     );
@@ -43,7 +57,7 @@ fn setup_listed() -> (LiteSVM, Keypair, Keypair) {
         &developer,
         &[&developer],
     );
-    // The sponsor is the configured rent collector; setup funded it.
+    // The sponsor is the configured rent sponsor; setup funded it.
     (svm, admin, sponsor())
 }
 
@@ -141,7 +155,7 @@ fn buy_rejects_unaccepted_mint() {
     let investor = new_investor(&mut svm, &admin);
     give_xcav(&mut svm, &investor.pubkey(), FUND_XCAV);
 
-    // Paying in XCAV: a real mint, but not on the accepted list.
+    // Paying in XCAV: a real mint, but not what the listing settles in.
     let vault_ata = Pubkey::find_program_address(
         &[
             listing_vault_pda(0).as_ref(),
@@ -165,7 +179,7 @@ fn buy_rejects_unaccepted_mint() {
         ),
         &sponsor,
         &[&sponsor, &investor],
-        "MintNotAccepted",
+        "PaymentMintMismatch",
     );
 }
 
@@ -295,7 +309,7 @@ fn buy_after_expiry_fails() {
     );
 }
 
-// Rent sponsorship is pinned to the configured rent collector, so the wallet
+// Rent sponsorship is pinned to the configured rent sponsor, so the wallet
 // fronting rent and the wallet refunded at close are always the same one.
 #[test]
 fn buy_rejects_foreign_sponsor() {
@@ -307,15 +321,16 @@ fn buy_rejects_foreign_sponsor() {
         buy_ix(&investor.pubkey(), &stranger.pubkey(), 0, 10, u64::MAX),
         &stranger,
         &[&stranger, &investor],
-        "NotRentCollector",
+        "NotRentSponsor",
     );
 }
 
-// Paying in the 6-decimal GBP mint runs the rescale at a real factor: every
-// component divides by 1_000.
+// A listing settling in the 6-decimal GBP mint runs the rescale at a real
+// factor: every component divides by 1_000.
 #[test]
 fn buy_scales_to_six_decimal_mint() {
-    let (mut svm, admin, sponsor) = setup_direct();
+    let (mut svm, admin, sponsor) = setup_listed_in(gbp6_mint());
+    acquire_many(&mut svm, &admin, &[]);
     let investor = new_investor(&mut svm, &admin);
     give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
 
@@ -355,6 +370,30 @@ fn buy_scales_to_six_decimal_mint() {
     assert_eq!(vault_state.base.amount, total_of(10) / 1_000);
 }
 
+// The config may accept several mints, but a listing settles in exactly one.
+#[test]
+fn buy_rejects_another_accepted_mint() {
+    let (mut svm, admin, sponsor) = setup_direct();
+    let investor = new_investor(&mut svm, &admin);
+    give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
+    fails_with(
+        &mut svm,
+        buy_ix_with_mint(
+            &investor.pubkey(),
+            &sponsor.pubkey(),
+            0,
+            10,
+            u64::MAX,
+            gbp6_mint(),
+            gbp6_acc(&investor.pubkey()),
+            payment_ata(&listing_vault_pda(0), &gbp6_mint()),
+        ),
+        &sponsor,
+        &[&sponsor, &investor],
+        "PaymentMintMismatch",
+    );
+}
+
 // The recorded fee quote is the cap on the SPV lawyer's costs, and on a
 // cancellation the retained fee is all they can be paid from. So it must
 // state what the vault actually holds: the round trip through the mint's
@@ -368,7 +407,16 @@ fn direct_buy_records_only_the_fee_actually_held() {
     let developer = new_developer(&mut svm, &admin);
     ok(
         &mut svm,
-        list_ix(&developer.pubkey(), 0),
+        list_property_ix_in(
+            &developer.pubkey(),
+            0,
+            1,
+            POSTCODE,
+            gbp6_mint(),
+            SHARE_PRICE,
+            SHARE_AMOUNT,
+            u64::MAX,
+        ),
         &developer,
         &[&developer],
     );

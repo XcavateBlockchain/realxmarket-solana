@@ -33,8 +33,8 @@ pub struct WithdrawExpired<'info> {
 
     /// CHECK: the sponsor wallet that fronted the accounts' rent; gets it
     /// back as they close.
-    #[account(mut, address = config.rent_collector @ MarketplaceError::NotRentCollector)]
-    pub rent_collector: UncheckedAccount<'info>,
+    #[account(mut, address = config.rent_sponsor @ MarketplaceError::NotRentSponsor)]
+    pub rent_sponsor: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -52,7 +52,7 @@ pub struct WithdrawExpired<'info> {
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [POSITION_SEED, &listing_id.to_le_bytes(), investor.key().as_ref()],
         bump = position.bump,
     )]
@@ -60,7 +60,7 @@ pub struct WithdrawExpired<'info> {
 
     #[account(
         mut,
-        close = rent_collector,
+        close = rent_sponsor,
         seeds = [SHARE_SEED, &listing_id.to_le_bytes(), investor.key().as_ref()],
         bump = holding.bump,
     )]

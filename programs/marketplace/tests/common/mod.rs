@@ -250,7 +250,7 @@ pub fn gbp6_mint() -> Pubkey {
 }
 
 /// The sponsor wallet fronting investor rent. Deterministic, so
-/// `default_params` can name it as the rent collector.
+/// `default_params` can name it as the rent sponsor.
 pub fn sponsor() -> Keypair {
     Keypair::new_from_array([42u8; 32])
 }
@@ -643,7 +643,7 @@ pub fn roles_assign_ix(admin: &Pubkey, user: &Pubkey, role: Role) -> Instruction
 pub fn default_params() -> ConfigParams {
     ConfigParams {
         treasury: Pubkey::new_from_array([9u8; 32]),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         accepted_payment_mints: vec![tgbp_mint(), gbp6_mint()],
         listing_deposit: LISTING_DEPOSIT,
         lawyer_deposit: LAWYER_DEPOSIT,
@@ -750,6 +750,7 @@ pub fn seed_region_taxed(svm: &mut LiteSVM, region_id: u16, owner: &Pubkey, tax_
     );
     let region = regions::state::Region {
         region_id,
+        name: "England".to_string(),
         owner: *owner,
         collateral: 0,
         location_collateral: 0,
@@ -846,6 +847,30 @@ pub fn list_property_ix_capped(
     share_amount: u32,
     max_deposit: u64,
 ) -> Instruction {
+    list_property_ix_in(
+        developer,
+        listing_id,
+        region_id,
+        postcode,
+        tgbp_mint(),
+        share_price,
+        share_amount,
+        max_deposit,
+    )
+}
+
+/// `list_property_ix_capped` settling in `payment_mint` instead of tGBP.
+#[allow(clippy::too_many_arguments)]
+pub fn list_property_ix_in(
+    developer: &Pubkey,
+    listing_id: u64,
+    region_id: u16,
+    postcode: &[u8],
+    payment_mint: Pubkey,
+    share_price: u64,
+    share_amount: u32,
+    max_deposit: u64,
+) -> Instruction {
     Instruction::new_with_bytes(
         mid(),
         &marketplace::instruction::ListProperty {
@@ -866,6 +891,7 @@ pub fn list_property_ix_capped(
             location: location_pda(region_id, postcode),
             property: property_pda(listing_id),
             listing: listing_pda(listing_id),
+            payment_mint,
             xcav_mint: xcav_mint(),
             developer_token: token_acc(developer),
             vault: vault(),
@@ -1162,6 +1188,16 @@ pub fn unreserve_ix(investor: &Pubkey, listing_id: u64) -> Instruction {
 }
 
 pub fn release_reservation_ix(cranker: &Pubkey, listing_id: u64, investor: &Pubkey) -> Instruction {
+    release_reservation_ix_for(cranker, listing_id, investor, &tgbp_acc(investor))
+}
+
+/// `release_reservation_ix` for a reservation bound to `payment_account`.
+pub fn release_reservation_ix_for(
+    cranker: &Pubkey,
+    listing_id: u64,
+    investor: &Pubkey,
+    payment_account: &Pubkey,
+) -> Instruction {
     Instruction::new_with_bytes(
         mid(),
         &marketplace::instruction::ReleaseReservation {
@@ -1172,10 +1208,10 @@ pub fn release_reservation_ix(cranker: &Pubkey, listing_id: u64, investor: &Pubk
         marketplace::accounts::ReleaseReservation {
             cranker: *cranker,
             config: marketplace_config(),
-            rent_collector: sponsor().pubkey(),
+            rent_sponsor: sponsor().pubkey(),
             listing: listing_pda(listing_id),
             position: position_pda(listing_id, investor),
-            reservation: reservation_pda(&tgbp_acc(investor)),
+            reservation: reservation_pda(payment_account),
         }
         .to_account_metas(None),
     )
@@ -1188,7 +1224,7 @@ pub fn close_reservation_ix(cranker: &Pubkey, token_account: &Pubkey) -> Instruc
         marketplace::accounts::CloseReservation {
             cranker: *cranker,
             config: marketplace_config(),
-            rent_collector: sponsor().pubkey(),
+            rent_sponsor: sponsor().pubkey(),
             reservation: reservation_pda(token_account),
         }
         .to_account_metas(None),
@@ -1207,6 +1243,7 @@ pub fn reservation_of(svm: &LiteSVM, token_account: &Pubkey) -> marketplace::sta
 
 /// Reserve the shares of listing 0 that nobody else has yet, using throwaway
 /// filler investors in cap-sized chunks, so the sale can lock in.
+/// Fillers pay in whatever mint the listing settles in.
 pub fn fill_reserve(svm: &mut LiteSVM, admin: &Keypair) -> Vec<Keypair> {
     let sponsor = sponsor();
     let listing = listing_of(svm, 0);
@@ -1216,9 +1253,23 @@ pub fn fill_reserve(svm: &mut LiteSVM, admin: &Keypair) -> Vec<Keypair> {
     while left > 0 {
         let amount = left.min(49);
         let filler = new_investor(svm, admin);
+        let payment = if listing.payment_mint == gbp6_mint() {
+            give_gbp6(svm, &filler.pubkey(), 1_000_000_000);
+            gbp6_acc(&filler.pubkey())
+        } else {
+            tgbp_acc(&filler.pubkey())
+        };
         ok(
             svm,
-            reserve_ix(&filler.pubkey(), &sponsor.pubkey(), 0, amount, u64::MAX),
+            reserve_ix_with_mint(
+                &filler.pubkey(),
+                &sponsor.pubkey(),
+                0,
+                amount,
+                u64::MAX,
+                listing.payment_mint,
+                payment,
+            ),
             &sponsor,
             &[&sponsor, &filler],
         );
@@ -1266,10 +1317,16 @@ pub fn acquire_many(svm: &mut LiteSVM, admin: &Keypair, buyers: &[(&Keypair, u32
     if !fillers.is_empty() {
         warp(svm, CLAIMING_TIME + 1);
         let cranker = funded(svm);
+        let gbp6 = listing_of(svm, 0).payment_mint == gbp6_mint();
         for filler in &fillers {
+            let payment = if gbp6 {
+                gbp6_acc(&filler.pubkey())
+            } else {
+                tgbp_acc(&filler.pubkey())
+            };
             ok(
                 svm,
-                release_reservation_ix(&cranker.pubkey(), 0, &filler.pubkey()),
+                release_reservation_ix_for(&cranker.pubkey(), 0, &filler.pubkey(), &payment),
                 &cranker,
                 &[&cranker],
             );
@@ -1292,7 +1349,7 @@ pub fn close_position_ix(cranker: &Pubkey, listing_id: u64, investor: &Pubkey) -
         marketplace::accounts::CloseCancelledPosition {
             cranker: *cranker,
             config: marketplace_config(),
-            rent_collector: sponsor().pubkey(),
+            rent_sponsor: sponsor().pubkey(),
             listing: listing_pda(listing_id),
             position: position_pda(listing_id, investor),
         }
@@ -1334,7 +1391,7 @@ pub fn withdraw_expired_ix(investor: &Pubkey, listing_id: u64) -> Instruction {
         marketplace::accounts::WithdrawExpired {
             investor: *investor,
             config: marketplace_config(),
-            rent_collector: sponsor().pubkey(),
+            rent_sponsor: sponsor().pubkey(),
             listing: listing_pda(listing_id),
             property: property_pda(listing_id),
             position: position_pda(listing_id, investor),
@@ -1428,7 +1485,7 @@ pub fn withdraw_exit_ix_with_mint(
     let accounts = marketplace::accounts::WithdrawExpired {
         investor: *investor,
         config: marketplace_config(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         listing: listing_pda(listing_id),
         property: property_pda(listing_id),
         position: position_pda(listing_id, investor),
@@ -1521,7 +1578,7 @@ pub fn close_dead_listing_ix_for(
     let mut accounts = marketplace::accounts::CloseDeadListing {
         cranker: *cranker,
         config: marketplace_config(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         developer: *developer,
         listing: listing_pda(listing_id),
         property: property_pda(listing_id),
@@ -1561,7 +1618,7 @@ pub fn close_settled_payment_accounts_ix(
     let mut accounts = marketplace::accounts::CloseSettledPaymentAccounts {
         cranker: *cranker,
         config: marketplace_config(),
-        rent_collector: sponsor().pubkey(),
+        rent_sponsor: sponsor().pubkey(),
         listing: listing_pda(listing_id),
         listing_vault: listing_vault_pda(listing_id),
         share_token_program: anchor_spl::token_2022::ID,
@@ -1744,7 +1801,7 @@ pub fn unregister_lawyer_ix(lawyer: &Pubkey) -> Instruction {
         marketplace::accounts::UnregisterLawyer {
             lawyer: *lawyer,
             config: marketplace_config(),
-            rent_collector: sponsor().pubkey(),
+            rent_sponsor: sponsor().pubkey(),
             lawyer_account: lawyer_pda(lawyer),
             xcav_mint: xcav_mint(),
             lawyer_token: token_acc(lawyer),
@@ -2259,7 +2316,7 @@ pub fn close_holding_ix(cranker: &Pubkey, asset_id: u64, owner: &Pubkey) -> Inst
         marketplace::accounts::CloseShareHolding {
             cranker: *cranker,
             config: marketplace_config(),
-            rent_collector: sponsor().pubkey(),
+            rent_sponsor: sponsor().pubkey(),
             property: property_pda(asset_id),
             holding: holding_pda(asset_id, owner),
         }
@@ -2284,8 +2341,8 @@ pub fn token_balance(svm: &LiteSVM, address: &Pubkey) -> u64 {
 pub const COSTS: u64 = 1_000_000_000;
 pub const DOCS: [u8; 32] = [7u8; 32];
 
-/// (shares, pays in gbp6) per investor; a mixed-mint sellout of 100.
-pub const BUYS: [(u32, bool); 4] = [(34, false), (33, false), (24, true), (9, true)];
+/// Shares per investor; a sellout of 100.
+pub const BUYS: [u32; 4] = [34, 33, 24, 9];
 
 /// A settled, finalized property. Investors hold 34/33/24/9; the first one
 /// still carries their 34-share lawyer-election lock.
@@ -2316,22 +2373,13 @@ pub fn build_property(finalize: bool) -> (LiteSVM, Keypair, Vec<Keypair>) {
 
     let spn = sponsor();
     let investors: Vec<Keypair> = (0..4).map(|_| new_investor(&mut svm, &admin)).collect();
-    for (investor, (shares, gbp6)) in investors.iter().zip(BUYS) {
-        let ix = if gbp6 {
-            give_gbp6(&mut svm, &investor.pubkey(), 1_000_000_000);
-            reserve_ix_with_mint(
-                &investor.pubkey(),
-                &spn.pubkey(),
-                0,
-                shares,
-                u64::MAX,
-                gbp6_mint(),
-                gbp6_acc(&investor.pubkey()),
-            )
-        } else {
-            reserve_ix(&investor.pubkey(), &spn.pubkey(), 0, shares, u64::MAX)
-        };
-        ok(&mut svm, ix, &spn, &[&spn, investor]);
+    for (investor, shares) in investors.iter().zip(BUYS) {
+        ok(
+            &mut svm,
+            reserve_ix(&investor.pubkey(), &spn.pubkey(), 0, shares, u64::MAX),
+            &spn,
+            &[&spn, investor],
+        );
     }
     let confirmer = new_confirmer(&mut svm, &admin);
     ok(
@@ -2340,20 +2388,13 @@ pub fn build_property(finalize: bool) -> (LiteSVM, Keypair, Vec<Keypair>) {
         &confirmer,
         &[&confirmer],
     );
-    for (investor, (_, gbp6)) in investors.iter().zip(BUYS) {
-        let ix = if gbp6 {
-            claim_ix_with_mint(
-                &investor.pubkey(),
-                &spn.pubkey(),
-                0,
-                gbp6_mint(),
-                gbp6_acc(&investor.pubkey()),
-                payment_ata(&listing_vault_pda(0), &gbp6_mint()),
-            )
-        } else {
-            claim_ix(&investor.pubkey(), &spn.pubkey(), 0)
-        };
-        ok(&mut svm, ix, &spn, &[&spn, investor]);
+    for investor in &investors {
+        ok(
+            &mut svm,
+            claim_ix(&investor.pubkey(), &spn.pubkey(), 0),
+            &spn,
+            &[&spn, investor],
+        );
     }
 
     let dl = new_registered_lawyer(&mut svm, &admin, 1);
@@ -2399,19 +2440,11 @@ pub fn build_property(finalize: bool) -> (LiteSVM, Keypair, Vec<Keypair>) {
         &operator.pubkey(),
     ] {
         give_tgbp(&mut svm, wallet, 0);
-        give_gbp6(&mut svm, wallet, 0);
     }
     set_token_account_for(
         &mut svm,
         tgbp_mint(),
         treasury_payment_ata(),
-        &treasury(),
-        0,
-    );
-    set_token_account_for(
-        &mut svm,
-        gbp6_mint(),
-        payment_ata(&treasury(), &gbp6_mint()),
         &treasury(),
         0,
     );
@@ -2427,7 +2460,7 @@ pub fn build_property(finalize: bool) -> (LiteSVM, Keypair, Vec<Keypair>) {
                 &dl.pubkey(),
                 &sl.pubkey(),
                 &operator.pubkey(),
-                &[tgbp_mint(), gbp6_mint()],
+                &[tgbp_mint()],
             ),
             &cranker,
             &[&cranker],
@@ -2487,7 +2520,6 @@ pub fn make_offer_ix(
             payer: *offeror,
             offeror_role: role_pda(offeror, Role::RealEstateInvestor),
             offeror_compliance: compliance_pda(offeror),
-            config: marketplace_config(),
             share_listing: share_listing_pda(id),
             offer: offer_pda(id, offeror),
             offer_vault: offer_vault_pda(id, offeror),
