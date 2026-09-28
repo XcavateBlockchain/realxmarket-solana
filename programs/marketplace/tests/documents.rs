@@ -620,3 +620,74 @@ fn silent_abandonment_still_slashes_the_bond() {
         LISTING_DEPOSIT - LISTING_DEPOSIT / 100
     );
 }
+
+// An SPV lawyer who re-owned their ATA can't hold the retained fees, and
+// with them the teardown, hostage: the cranker pays any account they own.
+#[test]
+fn fee_settlement_survives_a_reowned_lawyer_account() {
+    let (mut svm, _admin, developer, (a, b, c), dev_lawyer, spv_lawyer) = setup_engaged();
+    rule(&mut svm, &dev_lawyer, &spv_lawyer, false, false);
+    let cranker = funded(&mut svm);
+    for lawyer in [&dev_lawyer, &spv_lawyer] {
+        ok(
+            &mut svm,
+            close_case_ix(&cranker.pubkey(), 0, &lawyer.pubkey()),
+            &cranker,
+            &[&cranker],
+        );
+    }
+    ok(&mut svm, unlock_votes_ix(&a.pubkey(), 0, 1), &a, &[&a]);
+    for investor in [&a, &b, &c] {
+        ok(
+            &mut svm,
+            withdraw_cancelled_ix(&investor.pubkey(), 0),
+            investor,
+            &[investor],
+        );
+    }
+    ok(
+        &mut svm,
+        withdraw_deposit_ix(&developer.pubkey(), 0),
+        &developer,
+        &[&developer],
+    );
+
+    reown_payment_ata(&mut svm, &spv_lawyer.pubkey(), &tgbp_mint());
+    fails_with(
+        &mut svm,
+        settle_cancelled_fees_ix(&cranker.pubkey(), 0, &spv_lawyer.pubkey()),
+        &cranker,
+        &[&cranker],
+        "ConstraintTokenOwner",
+    );
+    // Costs are still due, so the crank can't skip the lawyer's account.
+    fails_with(
+        &mut svm,
+        settle_fees_ix_to(
+            &cranker.pubkey(),
+            0,
+            tgbp_mint(),
+            &spv_lawyer.pubkey(),
+            None,
+        ),
+        &cranker,
+        &[&cranker],
+        "PayoutAccountMissing",
+    );
+
+    let fresh = fresh_payment_acc(&mut svm, &spv_lawyer.pubkey(), &tgbp_mint());
+    ok(
+        &mut svm,
+        settle_fees_ix_to(
+            &cranker.pubkey(),
+            0,
+            tgbp_mint(),
+            &spv_lawyer.pubkey(),
+            Some(fresh),
+        ),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(token_balance(&svm, &fresh), COSTS);
+    assert_eq!(listing_of(&svm, 0).spv_costs_due, 0);
+}

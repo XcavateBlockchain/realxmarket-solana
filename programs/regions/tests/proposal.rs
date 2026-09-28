@@ -815,13 +815,13 @@ fn finalize_pass_without_proposer_token_works() {
     warp_past_voting(&mut svm);
 
     // A pass keeps the bond as collateral (no XCAV moves to the proposer), so
-    // the crank settles even after the proposer closed their token account.
+    // the crank settles without any proposer token account at all.
     svm.set_account(token_acc(&operator.pubkey()), Account::default())
         .unwrap();
     let cranker = funded(&mut svm);
     ok(
         &mut svm,
-        finalize_ix(&cranker.pubkey(), 1, id, &operator.pubkey()),
+        finalize_ix_to(&cranker.pubkey(), 1, id, &operator.pubkey(), None),
         &cranker,
         &[&cranker],
     );
@@ -829,7 +829,7 @@ fn finalize_pass_without_proposer_token_works() {
 }
 
 // A proposer closing their token account must not wedge the reject path: the
-// crank recreates the associated account and the refund lands there.
+// cranker recreates the associated account and the refund lands there.
 #[test]
 fn finalize_reject_survives_closed_proposer_token() {
     let (mut svm, operator, _authority) = setup();
@@ -847,12 +847,106 @@ fn finalize_reject_survives_closed_proposer_token() {
     let cranker = funded(&mut svm);
     ok(
         &mut svm,
+        create_ata_ix(&cranker.pubkey(), &operator.pubkey()),
+        &cranker,
+        &[&cranker],
+    );
+    ok(
+        &mut svm,
         finalize_ix(&cranker.pubkey(), 1, id, &operator.pubkey()),
         &cranker,
         &[&cranker],
     );
     assert_eq!(region_state_of(&svm, 1).status, RegionStatus::Rejected);
     assert_eq!(xcav_balance(&svm, &operator.pubkey()), DEPOSIT);
+}
+
+// A proposer who re-owned their ATA left that address unusable; the cranker
+// refunds any other account they own.
+#[test]
+fn finalize_reject_survives_reowned_proposer_token() {
+    let (mut svm, operator, _authority) = setup();
+    let id = next_proposal_id(&svm);
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 1, id),
+        &operator,
+        &[&operator],
+    );
+    warp_past_voting(&mut svm);
+
+    reown_token_acc(&mut svm, &operator.pubkey());
+    let cranker = funded(&mut svm);
+    fails_with(
+        &mut svm,
+        finalize_ix(&cranker.pubkey(), 1, id, &operator.pubkey()),
+        &cranker,
+        &[&cranker],
+        "ConstraintTokenOwner",
+    );
+
+    let fresh = fresh_token_acc(&mut svm, &operator.pubkey());
+    ok(
+        &mut svm,
+        finalize_ix_to(&cranker.pubkey(), 1, id, &operator.pubkey(), Some(fresh)),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(region_state_of(&svm, 1).status, RegionStatus::Rejected);
+    assert_eq!(balance_at(&svm, &fresh), DEPOSIT);
+}
+
+// The refund account must belong to the proposer: a cranker can't route the
+// bond to themselves.
+#[test]
+fn finalize_reject_refuses_a_foreign_refund_account() {
+    let (mut svm, operator, _authority) = setup();
+    let id = next_proposal_id(&svm);
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 1, id),
+        &operator,
+        &[&operator],
+    );
+    warp_past_voting(&mut svm);
+
+    let cranker = actor(&mut svm);
+    fails_with(
+        &mut svm,
+        finalize_ix_to(
+            &cranker.pubkey(),
+            1,
+            id,
+            &operator.pubkey(),
+            Some(token_acc(&cranker.pubkey())),
+        ),
+        &cranker,
+        &[&cranker],
+        "ConstraintTokenOwner",
+    );
+}
+
+// A rejection owes a refund, so the crank needs somewhere to send it.
+#[test]
+fn finalize_reject_needs_a_refund_account() {
+    let (mut svm, operator, _authority) = setup();
+    let id = next_proposal_id(&svm);
+    ok(
+        &mut svm,
+        propose_ix(&operator.pubkey(), 1, id),
+        &operator,
+        &[&operator],
+    );
+    warp_past_voting(&mut svm);
+
+    let cranker = funded(&mut svm);
+    fails_with(
+        &mut svm,
+        finalize_ix_to(&cranker.pubkey(), 1, id, &operator.pubkey(), None),
+        &cranker,
+        &[&cranker],
+        "RefundAccountMissing",
+    );
 }
 
 // A passing proposal keeps the bond locked as the region's collateral; the

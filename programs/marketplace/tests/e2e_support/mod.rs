@@ -296,10 +296,8 @@ pub fn finalize_region_ix(
             region_state: region_state_pda(region_id),
             proposal: region_proposal_pda(proposal_id),
             proposer: *proposer,
-            proposer_token: xcav_ata(proposer),
+            proposer_token: Some(xcav_ata(proposer)),
             token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: anchor_spl::associated_token::ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
@@ -773,6 +771,8 @@ pub fn live_region(svm: &mut LiteSVM, admin: &Keypair) -> (Keypair, u64) {
     let operator = region_operator();
     svm.airdrop(&operator.pubkey(), 100_000_000_000).unwrap();
     give_xcav_ata(svm, &operator.pubkey(), FUND_XCAV);
+    // The fee accounts the secondary builders pay the operator at.
+    seed_payment_atas(svm, &operator.pubkey());
     ok(
         svm,
         roles_assign_ix(&admin.pubkey(), &operator.pubkey(), Role::RegionalOperator),

@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create as CreateAta};
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::constants::{CONFIG_SEED, PROPOSAL_SEED, REGION_STATE_SEED, VAULT_SEED};
@@ -56,15 +55,17 @@ pub struct FinalizeRegionProposal<'info> {
     #[account(mut)]
     pub proposer: UncheckedAccount<'info>,
 
-    /// CHECK: the proposer's associated XCAV account; receives the returned
-    /// bond on a rejection. Created idempotently (the ATA program verifies the
-    /// derivation), so a proposer closing their account can't wedge the crank.
-    #[account(mut)]
-    pub proposer_token: UncheckedAccount<'info>,
+    /// Any XCAV account the proposer owns; needed only on a rejection, which
+    /// refunds the bond into it. Not pinned to the ATA, so a re-owned one
+    /// can't wedge the crank.
+    #[account(
+        mut,
+        token::mint = config.xcav_mint,
+        token::authority = proposer,
+    )]
+    pub proposer_token: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
 
     pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn finalize_region_proposal_handler(
@@ -115,24 +116,17 @@ pub fn finalize_region_proposal_handler(
         });
     } else {
         // Rejected: return the bond in full and mark the state rejected so the
-        // region can be proposed again once cleared. The cranker fronts the
-        // token-account rent if the proposer closed theirs.
-        create_idempotent(CpiContext::new(
-            ctx.accounts.associated_token_program.key(),
-            CreateAta {
-                payer: ctx.accounts.cranker.to_account_info(),
-                associated_token: ctx.accounts.proposer_token.to_account_info(),
-                authority: ctx.accounts.proposer.to_account_info(),
-                mint: ctx.accounts.xcav_mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            },
-        ))?;
+        // region can be proposed again once cleared.
+        let proposer_token = ctx
+            .accounts
+            .proposer_token
+            .as_ref()
+            .ok_or(RegionsError::RefundAccountMissing)?;
         release_from_vault(
             &ctx.accounts.token_program.to_account_info(),
             &ctx.accounts.vault.to_account_info(),
             &ctx.accounts.xcav_mint.to_account_info(),
-            &ctx.accounts.proposer_token.to_account_info(),
+            &proposer_token.to_account_info(),
             &ctx.accounts.config.to_account_info(),
             ctx.accounts.config.bump,
             deposit,

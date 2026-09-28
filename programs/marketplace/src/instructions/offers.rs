@@ -19,7 +19,9 @@ use crate::constants::{
 };
 use crate::error::MarketplaceError;
 use crate::instructions::buy::{bps_of, scale_to_mint};
-use crate::instructions::secondary::{move_shares, require_pda, settle_income};
+use crate::instructions::secondary::{
+    move_shares, require_owned_token_account, require_pda, settle_income,
+};
 use crate::state::{
     Config, Listing, ListingStatus, Offer, PropertyAsset, ShareHolding, ShareListing, LOCK_REASONS,
     MIN_SHARE_PRICE,
@@ -365,16 +367,16 @@ pub struct AcceptOffer<'info> {
     #[account(mut)]
     pub vault_payment_account: UncheckedAccount<'info>,
 
-    /// CHECK: the seller's associated account for the paid mint; created
-    /// idempotently, so a closed account can't strand the proceeds.
+    /// CHECK: any account of the paid mint the seller owns; checked in the
+    /// handler (stack room).
     #[account(mut)]
     pub seller_payment: UncheckedAccount<'info>,
 
     /// CHECK: the treasury owner key; the handler checks it against config.
     pub treasury: UncheckedAccount<'info>,
 
-    /// CHECK: the treasury's associated account for the paid mint; created
-    /// idempotently.
+    /// CHECK: any account of the paid mint the treasury owns; checked in
+    /// the handler.
     #[account(mut)]
     pub treasury_payment: UncheckedAccount<'info>,
 
@@ -383,11 +385,11 @@ pub struct AcceptOffer<'info> {
     pub region: UncheckedAccount<'info>,
 
     /// CHECK: the region's current owner; the handler checks it against the
-    /// region record. Authority of the ATA below.
+    /// region record.
     pub region_owner: UncheckedAccount<'info>,
 
-    /// CHECK: the region owner's associated account for the paid mint;
-    /// created idempotently.
+    /// CHECK: any account of the paid mint the region owner owns; checked in
+    /// the handler, so a re-owned ATA can't block the region's trades.
     #[account(mut)]
     pub operator_payment: UncheckedAccount<'info>,
 
@@ -634,37 +636,24 @@ pub fn accept_offer_handler<'info>(
     }
 
     // Every payee draws from the offer vault, which then closes; its rent
-    // rides back with the offer's. ATAs are created if needed, so a closed
-    // account can't block the acceptance. The seller's always: the sweep
-    // pays them whatever the fixed fees leave behind.
-    let mut ata_targets = vec![(
-        ctx.accounts.seller.to_account_info(),
-        ctx.accounts.seller_payment.to_account_info(),
-    )];
+    // rides back with the offer's. Each is paid into an account they own,
+    // so none of them can block the acceptance. The seller's is always
+    // checked: the sweep pays them whatever the fixed fees leave behind.
+    let mint_key = ctx.accounts.payment_mint.key();
+    require_owned_token_account(&ctx.accounts.seller_payment, &mint_key, &seller_key)?;
     if operator_fee > 0 {
-        ata_targets.push((
-            ctx.accounts.region_owner.to_account_info(),
-            ctx.accounts.operator_payment.to_account_info(),
-        ));
+        require_owned_token_account(
+            &ctx.accounts.operator_payment,
+            &mint_key,
+            &ctx.accounts.region_owner.key(),
+        )?;
     }
     if treasury_fee > 0 {
-        ata_targets.push((
-            ctx.accounts.treasury.to_account_info(),
-            ctx.accounts.treasury_payment.to_account_info(),
-        ));
-    }
-    for (authority, payment_account) in ata_targets {
-        create_idempotent(CpiContext::new(
-            ctx.accounts.associated_token_program.key(),
-            CreateAta {
-                payer: ctx.accounts.payer.to_account_info(),
-                associated_token: payment_account,
-                authority,
-                mint: ctx.accounts.payment_mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.payment_token_program.to_account_info(),
-            },
-        ))?;
+        require_owned_token_account(
+            &ctx.accounts.treasury_payment,
+            &mint_key,
+            &ctx.accounts.treasury.key(),
+        )?;
     }
     let id_bytes = id.to_le_bytes();
     let vault_seeds: &[&[u8]] = &[
@@ -762,11 +751,6 @@ pub fn accept_offer_handler<'info>(
 pub struct RejectOffer<'info> {
     pub seller: Signer<'info>,
 
-    /// Whoever fronts rent for the bidder's refund account if it needs
-    /// creating.
-    #[account(mut)]
-    pub payer: Signer<'info>,
-
     #[account(
         seeds = [SHARE_LISTING_SEED, &id.to_le_bytes()],
         bump = share_listing.bump,
@@ -804,14 +788,12 @@ pub struct RejectOffer<'info> {
     #[account(mut)]
     pub vault_payment_account: UncheckedAccount<'info>,
 
-    /// CHECK: the bidder's associated account for the refunded mint;
-    /// created idempotently, so a closed account can't strand the refund.
+    /// CHECK: any account of the refunded mint the bidder owns; checked in
+    /// the handler, so a re-owned ATA can't leave the offer stuck open.
     #[account(mut)]
     pub offeror_payment: UncheckedAccount<'info>,
 
     pub payment_token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn reject_offer_handler(ctx: Context<RejectOffer>, id: u64, nonce: u64) -> Result<()> {
@@ -821,9 +803,6 @@ pub fn reject_offer_handler(ctx: Context<RejectOffer>, id: u64, nonce: u64) -> R
     );
     let refunded = refund_offer(
         &ctx.accounts.payment_token_program,
-        &ctx.accounts.associated_token_program,
-        &ctx.accounts.system_program,
-        &ctx.accounts.payer,
         &ctx.accounts.payment_mint,
         &ctx.accounts.offer_vault,
         &ctx.accounts.vault_payment_account,
@@ -847,10 +826,6 @@ pub fn reject_offer_handler(ctx: Context<RejectOffer>, id: u64, nonce: u64) -> R
 #[derive(Accounts)]
 pub struct CancelOffer<'info> {
     pub offeror: Signer<'info>,
-
-    /// Whoever fronts rent for the refund account if it needs creating.
-    #[account(mut)]
-    pub payer: Signer<'info>,
 
     #[account(
         mut,
@@ -881,23 +856,18 @@ pub struct CancelOffer<'info> {
     #[account(mut)]
     pub vault_payment_account: UncheckedAccount<'info>,
 
-    /// CHECK: the bidder's associated account for the refunded mint;
-    /// created idempotently.
+    /// CHECK: any account of the refunded mint the bidder owns; checked in
+    /// the handler.
     #[account(mut)]
     pub offeror_payment: UncheckedAccount<'info>,
 
     pub payment_token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn cancel_offer_handler(ctx: Context<CancelOffer>) -> Result<()> {
     let id = ctx.accounts.offer.listing_id;
     let refunded = refund_offer(
         &ctx.accounts.payment_token_program,
-        &ctx.accounts.associated_token_program,
-        &ctx.accounts.system_program,
-        &ctx.accounts.payer,
         &ctx.accounts.payment_mint,
         &ctx.accounts.offer_vault,
         &ctx.accounts.vault_payment_account,
@@ -915,14 +885,11 @@ pub fn cancel_offer_handler(ctx: Context<CancelOffer>) -> Result<()> {
     Ok(())
 }
 
-/// Return the held bid to the bidder's ATA (created if needed) and close
-/// the vault's token account.
+/// Return the held bid to an account the bidder owns and close the vault's
+/// token account.
 #[allow(clippy::too_many_arguments)]
 fn refund_offer<'info>(
     payment_token_program: &Interface<'info, TokenInterface>,
-    associated_token_program: &Program<'info, AssociatedToken>,
-    system_program: &Program<'info, System>,
-    payer: &Signer<'info>,
     payment_mint: &UncheckedAccount<'info>,
     offer_vault: &UncheckedAccount<'info>,
     vault_payment_account: &UncheckedAccount<'info>,
@@ -947,19 +914,9 @@ fn refund_offer<'info>(
             .base
             .decimals
     };
-    create_idempotent(CpiContext::new(
-        associated_token_program.key(),
-        CreateAta {
-            payer: payer.to_account_info(),
-            associated_token: offeror_payment.to_account_info(),
-            authority: offeror.clone(),
-            mint: payment_mint.to_account_info(),
-            system_program: system_program.to_account_info(),
-            token_program: payment_token_program.to_account_info(),
-        },
-    ))?;
-    let id_bytes = id.to_le_bytes();
     let offeror_key = offeror.key();
+    require_owned_token_account(offeror_payment, &payment_mint.key(), &offeror_key)?;
+    let id_bytes = id.to_le_bytes();
     let vault_seeds: &[&[u8]] = &[
         OFFER_VAULT_SEED,
         &id_bytes,

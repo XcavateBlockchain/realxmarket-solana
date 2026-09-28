@@ -174,6 +174,91 @@ fn claim_open_region_changes_operator_and_refunds_old() {
     assert_eq!(new_before - xcav_balance(&svm, &newop.pubkey()), DEPOSIT);
 }
 
+// An incumbent who closed their associated account can't block a takeover:
+// the claimant recreates it and the refund lands there.
+#[test]
+fn takeover_survives_closed_old_owner_token() {
+    let (mut svm, operator, authority) = setup();
+    reach_seat_open(&mut svm, &operator, &authority);
+    svm.set_account(token_acc(&operator.pubkey()), Account::default())
+        .unwrap();
+
+    let newop = new_operator(&mut svm, &authority);
+    ok(
+        &mut svm,
+        create_ata_ix(&newop.pubkey(), &operator.pubkey()),
+        &newop,
+        &[&newop],
+    );
+    ok(
+        &mut svm,
+        claim_open_region_ix(&newop.pubkey(), 1, &operator.pubkey()),
+        &newop,
+        &[&newop],
+    );
+    assert_eq!(region_of(&svm, 1).owner, newop.pubkey());
+    assert_eq!(xcav_balance(&svm, &operator.pubkey()), DEPOSIT);
+}
+
+// An incumbent who re-owned their ATA left that address unusable; the
+// claimant refunds any other account they own, so the seat stays contestable.
+#[test]
+fn takeover_survives_reowned_old_owner_token() {
+    let (mut svm, operator, authority) = setup();
+    reach_seat_open(&mut svm, &operator, &authority);
+    reown_token_acc(&mut svm, &operator.pubkey());
+
+    let newop = new_operator(&mut svm, &authority);
+    fails_with(
+        &mut svm,
+        claim_open_region_ix(&newop.pubkey(), 1, &operator.pubkey()),
+        &newop,
+        &[&newop],
+        "ConstraintTokenOwner",
+    );
+
+    let fresh = fresh_token_acc(&mut svm, &operator.pubkey());
+    ok(
+        &mut svm,
+        claim_open_region_ix_to(
+            &newop.pubkey(),
+            1,
+            &operator.pubkey(),
+            Some(fresh),
+            u64::MAX,
+        ),
+        &newop,
+        &[&newop],
+    );
+    assert_eq!(region_of(&svm, 1).owner, newop.pubkey());
+    assert_eq!(balance_at(&svm, &fresh), DEPOSIT);
+}
+
+// The refund account must belong to the outgoing operator: a claimant can't
+// route the old bond to themselves, and can't skip the refund either.
+#[test]
+fn takeover_refuses_a_foreign_or_missing_refund_account() {
+    let (mut svm, operator, authority) = setup();
+    reach_seat_open(&mut svm, &operator, &authority);
+
+    let newop = new_operator(&mut svm, &authority);
+    let own = fresh_token_acc(&mut svm, &newop.pubkey());
+    fails_with(
+        &mut svm,
+        claim_open_region_ix_to(&newop.pubkey(), 1, &operator.pubkey(), Some(own), u64::MAX),
+        &newop,
+        &[&newop],
+        "ConstraintTokenOwner",
+    );
+    fails_with(
+        &mut svm,
+        claim_open_region_ix_to(&newop.pubkey(), 1, &operator.pubkey(), None, u64::MAX),
+        &newop,
+        &[&newop],
+        "RefundAccountMissing",
+    );
+}
+
 #[test]
 fn incumbent_renews_own_open_seat() {
     let (mut svm, operator, authority) = setup();
@@ -364,6 +449,55 @@ fn stale_passed_region_clears_and_refunds_bond() {
     assert!(svm
         .get_account(&region_state(1))
         .is_none_or(|a| a.data.is_empty()));
+}
+
+// A proposer who re-owned their ATA can't keep the region locked in its
+// stale passed state: the cranker refunds any account they own.
+#[test]
+fn stale_passed_clear_survives_reowned_proposer_token() {
+    let (mut svm, operator, authority) = setup();
+    reach_passed(&mut svm, &operator, &authority);
+    warp(&mut svm, 11_000);
+
+    reown_token_acc(&mut svm, &operator.pubkey());
+    let cranker = funded(&mut svm);
+    fails_with(
+        &mut svm,
+        clear_ix(&cranker.pubkey(), 1, &operator.pubkey()),
+        &cranker,
+        &[&cranker],
+        "ConstraintTokenOwner",
+    );
+
+    let fresh = fresh_token_acc(&mut svm, &operator.pubkey());
+    ok(
+        &mut svm,
+        clear_ix_to(&cranker.pubkey(), 1, &operator.pubkey(), Some(fresh)),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(balance_at(&svm, &fresh), DEPOSIT);
+    assert!(svm
+        .get_account(&region_state(1))
+        .is_none_or(|a| a.data.is_empty()));
+}
+
+// A stale pass owes a refund, so the clear needs somewhere to send it; a
+// rejected state owes nothing and clears without one.
+#[test]
+fn stale_passed_clear_needs_a_refund_account() {
+    let (mut svm, operator, authority) = setup();
+    reach_passed(&mut svm, &operator, &authority);
+    warp(&mut svm, 11_000);
+
+    let cranker = funded(&mut svm);
+    fails_with(
+        &mut svm,
+        clear_ix_to(&cranker.pubkey(), 1, &operator.pubkey(), None),
+        &cranker,
+        &[&cranker],
+        "RefundAccountMissing",
+    );
 }
 
 // A takeover charges the deposits the locations actually locked, not the

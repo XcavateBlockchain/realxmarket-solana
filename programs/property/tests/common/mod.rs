@@ -1277,6 +1277,28 @@ pub fn finalize_challenge_ix(
     agent: Option<&Pubkey>,
     challenger: &Pubkey,
 ) -> Instruction {
+    finalize_challenge_ix_to(
+        cranker,
+        rent_payer,
+        asset_id,
+        id,
+        agent,
+        challenger,
+        xcav_ata(challenger),
+    )
+}
+
+/// Finalize with an explicit refund account (any XCAV account the challenger
+/// owns).
+pub fn finalize_challenge_ix_to(
+    cranker: &Pubkey,
+    rent_payer: &Pubkey,
+    asset_id: u64,
+    id: u64,
+    agent: Option<&Pubkey>,
+    challenger: &Pubkey,
+    challenger_token: Pubkey,
+) -> Instruction {
     Instruction::new_with_bytes(
         pid(),
         &property::instruction::FinalizeChallenge { asset_id }.data(),
@@ -1293,13 +1315,42 @@ pub fn finalize_challenge_ix(
             treasury: treasury(),
             treasury_token: xcav_ata(&treasury()),
             challenger: *challenger,
-            challenger_token: xcav_ata(challenger),
+            challenger_token,
             token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: anchor_spl::associated_token::ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
+}
+
+/// The ATA program's `CreateIdempotent` for `wallet`'s XCAV account, paid by
+/// `payer`: what a cranker prepends when the recipient's account is gone.
+pub fn create_xcav_ata_ix(payer: &Pubkey, wallet: &Pubkey) -> Instruction {
+    Instruction::new_with_bytes(
+        anchor_spl::associated_token::ID,
+        &[1],
+        vec![
+            AccountMeta::new(*payer, true),
+            AccountMeta::new(xcav_ata(wallet), false),
+            AccountMeta::new_readonly(*wallet, false),
+            AccountMeta::new_readonly(xcav_mint(), false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+        ],
+    )
+}
+
+/// Turn `wallet`'s associated XCAV account into one owned by a stranger, the
+/// way `SetAuthority(AccountOwner)` on a classic mint would.
+pub fn reown_xcav_ata(svm: &mut LiteSVM, wallet: &Pubkey) {
+    set_token_account(svm, xcav_ata(wallet), &Pubkey::new_unique(), 0);
+}
+
+/// A fresh, non-associated XCAV account owned by `owner`, the way a cranker
+/// creates one when the recipient's associated account is unusable.
+pub fn fresh_xcav_acc(svm: &mut LiteSVM, owner: &Pubkey) -> Pubkey {
+    let address = Pubkey::new_unique();
+    set_token_account(svm, address, owner, 0);
+    address
 }
 
 pub fn unlock_challenge_votes_ix(voter: &Pubkey, asset_id: u64, id: u64) -> Instruction {

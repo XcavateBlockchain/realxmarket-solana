@@ -1426,10 +1426,6 @@
       "accounts": [
         {
           "name": "cranker",
-          "docs": [
-            "The cranker also fronts rent for any payout account created along the",
-            "way."
-          ],
           "writable": true,
           "signer": true
         },
@@ -1615,41 +1611,28 @@
           }
         },
         {
-          "name": "treasury",
-          "docs": [
-            "below."
-          ]
+          "name": "treasury"
         },
         {
           "name": "treasury_token",
           "docs": [
-            "the ATA program verifies the derivation."
+            "Any XCAV account the treasury owns."
           ],
           "writable": true
         },
         {
-          "name": "challenger",
-          "docs": [
-            "ATA below."
-          ]
+          "name": "challenger"
         },
         {
           "name": "challenger_token",
           "docs": [
-            "yet, so a closed account can't strand the refund."
+            "Any XCAV account the challenger owns. Not pinned to the ATA, so a",
+            "re-owned one can't strand the refund and freeze the seat's governance."
           ],
           "writable": true
         },
         {
           "name": "token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [

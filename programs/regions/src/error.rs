@@ -92,4 +92,7 @@ pub enum RegionsError {
     /// The region name is empty or too long.
     #[msg("Invalid region name")]
     InvalidRegionName,
+    /// A refund is due but no token account for the recipient was passed.
+    #[msg("Refund token account missing")]
+    RefundAccountMissing,
 }

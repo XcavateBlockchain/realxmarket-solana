@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create as CreateAta};
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::constants::{CONFIG_SEED, REGION_SEED, REGION_STATE_SEED, VAULT_SEED};
@@ -187,17 +186,17 @@ pub struct ClaimOpenRegion<'info> {
     #[account(address = region.owner @ RegionsError::NotRegionOwner)]
     pub old_owner: UncheckedAccount<'info>,
 
-    /// CHECK: the outgoing operator's associated XCAV account; receives their
-    /// returned collateral on a takeover. Created idempotently (the ATA
-    /// program verifies the derivation), so an outgoing operator closing their
-    /// account can't make the seat uncontestable. Unused when the incumbent
-    /// renews (they are refunded through `new_operator_token` instead).
-    #[account(mut)]
-    pub old_owner_token: UncheckedAccount<'info>,
+    /// Any XCAV account the outgoing operator owns; takes their collateral
+    /// back on a takeover, omitted when the incumbent renews. Not pinned to
+    /// the ATA, so they can't make the seat uncontestable by re-owning it.
+    #[account(
+        mut,
+        token::mint = config.xcav_mint,
+        token::authority = old_owner,
+    )]
+    pub old_owner_token: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
 
     pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn claim_open_region_handler(
@@ -259,8 +258,12 @@ pub fn claim_open_region_handler(
         }
     } else {
         // A different operator takes over: lock their full bond, then return the
-        // outgoing operator's collateral. The claimant fronts the token-account
-        // rent if the outgoing operator closed theirs.
+        // outgoing operator's collateral.
+        let old_owner_token = ctx
+            .accounts
+            .old_owner_token
+            .as_ref()
+            .ok_or(RegionsError::RefundAccountMissing)?;
         lock_to_vault(
             &ctx.accounts.token_program.to_account_info(),
             &ctx.accounts.new_operator_token.to_account_info(),
@@ -270,22 +273,11 @@ pub fn claim_open_region_handler(
             bond,
             decimals,
         )?;
-        create_idempotent(CpiContext::new(
-            ctx.accounts.associated_token_program.key(),
-            CreateAta {
-                payer: ctx.accounts.new_operator.to_account_info(),
-                associated_token: ctx.accounts.old_owner_token.to_account_info(),
-                authority: ctx.accounts.old_owner.to_account_info(),
-                mint: ctx.accounts.xcav_mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            },
-        ))?;
         release_from_vault(
             &ctx.accounts.token_program.to_account_info(),
             &ctx.accounts.vault.to_account_info(),
             &ctx.accounts.xcav_mint.to_account_info(),
-            &ctx.accounts.old_owner_token.to_account_info(),
+            &old_owner_token.to_account_info(),
             &ctx.accounts.config.to_account_info(),
             config_bump,
             existing_collateral,

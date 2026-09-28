@@ -396,6 +396,21 @@ pub fn give_xcav(svm: &mut LiteSVM, owner: &Pubkey, amount: u64) {
     set_token_account(svm, token_acc(owner), owner, amount);
 }
 
+/// An empty associated account of `mint` for `owner`, left alone if one is
+/// already there.
+pub fn seed_payment_ata(svm: &mut LiteSVM, owner: &Pubkey, mint: &Pubkey) {
+    let address = payment_ata(owner, mint);
+    if svm.get_account(&address).is_none_or(|a| a.data.is_empty()) {
+        set_token_account_for(svm, *mint, address, owner, 0);
+    }
+}
+
+/// Empty associated accounts in both accepted payment mints.
+pub fn seed_payment_atas(svm: &mut LiteSVM, owner: &Pubkey) {
+    seed_payment_ata(svm, owner, &tgbp_mint());
+    seed_payment_ata(svm, owner, &gbp6_mint());
+}
+
 /// Deterministic tGBP token account for an owner.
 pub fn tgbp_acc(owner: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"tgbp_token", owner.as_ref()], &mid()).0
@@ -744,6 +759,8 @@ pub fn seed_region(svm: &mut LiteSVM, region_id: u16, owner: &Pubkey) {
 }
 
 pub fn seed_region_taxed(svm: &mut LiteSVM, region_id: u16, owner: &Pubkey, tax_bps: u16) {
+    // The operator's fee accounts, where the secondary builders pay them.
+    seed_payment_atas(svm, owner);
     let (address, bump) = Pubkey::find_program_address(
         &[regions::REGION_SEED, &region_id.to_le_bytes()],
         &regions::id(),
@@ -989,9 +1006,13 @@ pub fn init_assets_ix_full(
 }
 
 /// A SOL-funded keypair with the RealEstateInvestor role and a tGBP balance.
+/// Their associated accounts in both payment mints exist too, empty: the
+/// payout paths take any account the payee owns, and the builders name
+/// those.
 pub fn new_investor(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
     let kp = funded(svm);
     give_tgbp(svm, &kp.pubkey(), 1_000_000_000_000);
+    seed_payment_atas(svm, &kp.pubkey());
     ok(
         svm,
         roles_assign_ix(&admin.pubkey(), &kp.pubkey(), Role::RealEstateInvestor),
@@ -1451,6 +1472,24 @@ pub fn settle_fees_ix_with_mint(
     mint: Pubkey,
     lawyer: &Pubkey,
 ) -> Instruction {
+    settle_fees_ix_to(
+        cranker,
+        listing_id,
+        mint,
+        lawyer,
+        Some(payment_ata(lawyer, &mint)),
+    )
+}
+
+/// Settle with an explicit lawyer payout account (any account of the mint
+/// the lawyer owns), or none.
+pub fn settle_fees_ix_to(
+    cranker: &Pubkey,
+    listing_id: u64,
+    mint: Pubkey,
+    lawyer: &Pubkey,
+    lawyer_payment_account: Option<Pubkey>,
+) -> Instruction {
     Instruction::new_with_bytes(
         mid(),
         &marketplace::instruction::SettleCancelledFees { listing_id }.data(),
@@ -1462,15 +1501,33 @@ pub fn settle_fees_ix_with_mint(
             listing_vault: listing_vault_pda(listing_id),
             listing_payment_account: payment_ata(&listing_vault_pda(listing_id), &mint),
             lawyer: *lawyer,
-            lawyer_payment_account: payment_ata(lawyer, &mint),
+            lawyer_payment_account,
             treasury: treasury(),
             treasury_payment_account: payment_ata(&treasury(), &mint),
             payment_token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: anchor_spl::associated_token::ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
+}
+
+/// Turn `wallet`'s associated account for `mint` into one owned by a
+/// stranger, the way `SetAuthority(AccountOwner)` on a classic mint would.
+pub fn reown_payment_ata(svm: &mut LiteSVM, wallet: &Pubkey, mint: &Pubkey) {
+    set_token_account_for(
+        svm,
+        *mint,
+        payment_ata(wallet, mint),
+        &Pubkey::new_unique(),
+        0,
+    );
+}
+
+/// A fresh, non-associated account of `mint` owned by `owner`, the way a
+/// payer creates one when the payee's associated account is unusable.
+pub fn fresh_payment_acc(svm: &mut LiteSVM, owner: &Pubkey, mint: &Pubkey) -> Pubkey {
+    let address = Pubkey::new_unique();
+    set_token_account_for(svm, *mint, address, owner, 0);
+    address
 }
 
 /// The dead-listing exit accounts for a position paid in `mint`; the caller
@@ -1851,9 +1908,11 @@ pub fn set_active_cases(svm: &mut LiteSVM, wallet: &Pubkey, active_cases: u32) {
     svm.set_account(lawyer_pda(wallet), acc).unwrap();
 }
 
-/// A SOL-funded, XCAV-holding keypair with the Lawyer role.
+/// A SOL-funded, XCAV-holding keypair with the Lawyer role and empty
+/// associated payment accounts for their costs.
 pub fn new_lawyer(svm: &mut LiteSVM, admin: &Keypair) -> Keypair {
     let kp = actor(svm);
+    seed_payment_atas(svm, &kp.pubkey());
     ok(
         svm,
         roles_assign_ix(&admin.pubkey(), &kp.pubkey(), Role::Lawyer),
@@ -2116,7 +2175,8 @@ pub fn setup() -> (LiteSVM, Keypair, Keypair) {
     svm.add_program(mid(), &program_bytes("marketplace"))
         .unwrap();
     set_mint(&mut svm);
-    // The treasury's XCAV account, where the abandonment slash lands.
+    // The treasury's XCAV account, where the abandonment slash lands, and
+    // its payment accounts, where the fee cuts land.
     set_token_account_for(
         &mut svm,
         xcav_mint(),
@@ -2124,6 +2184,7 @@ pub fn setup() -> (LiteSVM, Keypair, Keypair) {
         &treasury(),
         0,
     );
+    seed_payment_atas(&mut svm, &treasury());
 
     let authority = funded(&mut svm);
     svm.airdrop(&sponsor().pubkey(), 100_000_000_000).unwrap();
@@ -2274,6 +2335,32 @@ pub fn buy_relisted_ix_with_mint(
     payment_mint: Pubkey,
     buyer_payment: Pubkey,
 ) -> Instruction {
+    buy_relisted_ix_paying(
+        buyer,
+        asset_id,
+        id,
+        seller,
+        amount,
+        max_total_cost,
+        payment_mint,
+        buyer_payment,
+        payment_ata(&region_operator().pubkey(), &payment_mint),
+    )
+}
+
+/// A secondary buy with an explicit operator payout account.
+#[allow(clippy::too_many_arguments)]
+pub fn buy_relisted_ix_paying(
+    buyer: &Pubkey,
+    asset_id: u64,
+    id: u64,
+    seller: &Pubkey,
+    amount: u32,
+    max_total_cost: u64,
+    payment_mint: Pubkey,
+    buyer_payment: Pubkey,
+    operator_payment: Pubkey,
+) -> Instruction {
     Instruction::new_with_bytes(
         mid(),
         &marketplace::instruction::BuyRelistedShares {
@@ -2303,7 +2390,7 @@ pub fn buy_relisted_ix_with_mint(
             treasury_payment: payment_ata(&treasury(), &payment_mint),
             region: region_pda(1),
             region_owner: region_operator().pubkey(),
-            operator_payment: payment_ata(&region_operator().pubkey(), &payment_mint),
+            operator_payment,
             share_mint: share_mint_pda(asset_id),
             mint_auth: mint_auth_pda(asset_id),
             seller_share_account: investor_share_ata(asset_id, seller),
@@ -2609,12 +2696,31 @@ pub fn reject_offer_ix(
     nonce: u64,
     payment_mint: Pubkey,
 ) -> Instruction {
+    reject_offer_ix_to(
+        seller,
+        id,
+        offeror,
+        nonce,
+        payment_mint,
+        payment_ata(offeror, &payment_mint),
+    )
+}
+
+/// Reject with an explicit refund account (any account of the mint the
+/// bidder owns).
+pub fn reject_offer_ix_to(
+    seller: &Pubkey,
+    id: u64,
+    offeror: &Pubkey,
+    nonce: u64,
+    payment_mint: Pubkey,
+    offeror_payment: Pubkey,
+) -> Instruction {
     Instruction::new_with_bytes(
         mid(),
         &marketplace::instruction::RejectOffer { id, nonce }.data(),
         marketplace::accounts::RejectOffer {
             seller: *seller,
-            payer: *seller,
             share_listing: share_listing_pda(id),
             offeror: *offeror,
             offer: offer_pda(id, offeror),
@@ -2622,10 +2728,8 @@ pub fn reject_offer_ix(
             payment_mint,
             offer_vault: offer_vault_pda(id, offeror),
             vault_payment_account: payment_ata(&offer_vault_pda(id, offeror), &payment_mint),
-            offeror_payment: payment_ata(offeror, &payment_mint),
+            offeror_payment,
             payment_token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: anchor_spl::associated_token::ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
@@ -2637,7 +2741,6 @@ pub fn cancel_offer_ix(offeror: &Pubkey, id: u64, payment_mint: Pubkey) -> Instr
         &marketplace::instruction::CancelOffer {}.data(),
         marketplace::accounts::CancelOffer {
             offeror: *offeror,
-            payer: *offeror,
             offer: offer_pda(id, offeror),
             offer_rent_payer: *offeror,
             payment_mint,
@@ -2645,8 +2748,6 @@ pub fn cancel_offer_ix(offeror: &Pubkey, id: u64, payment_mint: Pubkey) -> Instr
             vault_payment_account: payment_ata(&offer_vault_pda(id, offeror), &payment_mint),
             offeror_payment: payment_ata(offeror, &payment_mint),
             payment_token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: anchor_spl::associated_token::ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )

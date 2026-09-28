@@ -1,3 +1,4 @@
+use anchor_lang::error::ErrorCode;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::solana_program::program::invoke_signed;
@@ -7,7 +8,8 @@ use anchor_spl::associated_token::{
     Create as CreateAta,
 };
 use anchor_spl::token_2022::spl_token_2022::{
-    extension::StateWithExtensions, state::Mint as MintState,
+    extension::StateWithExtensions,
+    state::{Account as TokenAccountState, Mint as MintState},
 };
 use anchor_spl::token_2022::{freeze_account, thaw_account, FreezeAccount, ThawAccount, Token2022};
 use anchor_spl::token_interface::{transfer_checked, TokenInterface, TransferChecked};
@@ -91,6 +93,22 @@ pub(crate) fn require_pda(
 ) -> Result<()> {
     let expected = Pubkey::create_program_address(seeds, program).map_err(|_| err)?;
     require_keys_eq!(*actual, expected, err);
+    Ok(())
+}
+
+/// Check that `account` holds `mint` for `owner`. Payouts accept any such
+/// account rather than the associated one: a classic ATA can be re-owned,
+/// which would let the payee block the payment. The transfer itself rejects
+/// anything the token program doesn't own.
+pub(crate) fn require_owned_token_account(
+    account: &AccountInfo,
+    mint: &Pubkey,
+    owner: &Pubkey,
+) -> Result<()> {
+    let data = account.try_borrow_data()?;
+    let state = StateWithExtensions::<TokenAccountState>::unpack(&data)?;
+    require_keys_eq!(state.base.mint, *mint, ErrorCode::ConstraintTokenMint);
+    require_keys_eq!(state.base.owner, *owner, ErrorCode::ConstraintTokenOwner);
     Ok(())
 }
 
@@ -448,18 +466,17 @@ pub struct BuyRelistedShares<'info> {
     #[account(mut)]
     pub buyer_payment: UncheckedAccount<'info>,
 
-    /// CHECK: the seller's associated account for the paid mint; created
-    /// idempotently, so a closed account can't strand the proceeds.
+    /// CHECK: any account of the paid mint the seller owns; checked in the
+    /// handler (stack room).
     #[account(mut)]
     pub seller_payment: UncheckedAccount<'info>,
 
-    /// CHECK: the treasury owner key from config; authority of the ATA
-    /// below.
+    /// CHECK: the treasury owner key from config.
     #[account(address = config.treasury @ MarketplaceError::WrongPayee)]
     pub treasury: UncheckedAccount<'info>,
 
-    /// CHECK: the treasury's associated account for the paid mint; created
-    /// idempotently.
+    /// CHECK: any account of the paid mint the treasury owns; checked in
+    /// the handler.
     #[account(mut)]
     pub treasury_payment: UncheckedAccount<'info>,
 
@@ -468,11 +485,11 @@ pub struct BuyRelistedShares<'info> {
     pub region: UncheckedAccount<'info>,
 
     /// CHECK: the region's current owner; the handler checks it against the
-    /// region record. Authority of the ATA below.
+    /// region record.
     pub region_owner: UncheckedAccount<'info>,
 
-    /// CHECK: the region owner's associated account for the paid mint;
-    /// created idempotently.
+    /// CHECK: any account of the paid mint the region owner owns; checked in
+    /// the handler, so a re-owned ATA can't block the region's trades.
     #[account(mut)]
     pub operator_payment: UncheckedAccount<'info>,
 
@@ -706,40 +723,30 @@ pub fn buy_relisted_shares_handler<'info>(
         .checked_sub(operator_fee)
         .ok_or(MarketplaceError::Overflow)?;
 
-    // Every payee is paid at their ATA, created if needed, so a closed
-    // account can't block the sale.
+    // Every payee is paid into an account they own, so none of them can
+    // block the sale.
     let payouts = [
         (
-            ctx.accounts.seller.to_account_info(),
+            seller_key,
             ctx.accounts.seller_payment.to_account_info(),
             seller_part,
         ),
         (
-            ctx.accounts.region_owner.to_account_info(),
+            ctx.accounts.region_owner.key(),
             ctx.accounts.operator_payment.to_account_info(),
             operator_fee,
         ),
         (
-            ctx.accounts.treasury.to_account_info(),
+            ctx.accounts.treasury.key(),
             ctx.accounts.treasury_payment.to_account_info(),
             treasury_fee,
         ),
     ];
-    for (authority, payment_account, payout) in payouts {
+    for (owner, payment_account, payout) in payouts {
         if payout == 0 {
             continue;
         }
-        create_idempotent(CpiContext::new(
-            ctx.accounts.associated_token_program.key(),
-            CreateAta {
-                payer: ctx.accounts.payer.to_account_info(),
-                associated_token: payment_account.clone(),
-                authority,
-                mint: ctx.accounts.payment_mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.payment_token_program.to_account_info(),
-            },
-        ))?;
+        require_owned_token_account(&payment_account, &mint_key, &owner)?;
         transfer_checked(
             CpiContext::new(
                 ctx.accounts.payment_token_program.key(),

@@ -346,7 +346,7 @@
         {
           "name": "seller_payment",
           "docs": [
-            "idempotently, so a closed account can't strand the proceeds."
+            "handler (stack room)."
           ],
           "writable": true
         },
@@ -356,7 +356,7 @@
         {
           "name": "treasury_payment",
           "docs": [
-            "idempotently."
+            "the handler."
           ],
           "writable": true
         },
@@ -369,13 +369,13 @@
         {
           "name": "region_owner",
           "docs": [
-            "region record. Authority of the ATA below."
+            "region record."
           ]
         },
         {
           "name": "operator_payment",
           "docs": [
-            "created idempotently."
+            "the handler, so a re-owned ATA can't block the region's trades."
           ],
           "writable": true
         },
@@ -1321,20 +1321,17 @@
         {
           "name": "seller_payment",
           "docs": [
-            "idempotently, so a closed account can't strand the proceeds."
+            "handler (stack room)."
           ],
           "writable": true
         },
         {
-          "name": "treasury",
-          "docs": [
-            "below."
-          ]
+          "name": "treasury"
         },
         {
           "name": "treasury_payment",
           "docs": [
-            "idempotently."
+            "the handler."
           ],
           "writable": true
         },
@@ -1347,13 +1344,13 @@
         {
           "name": "region_owner",
           "docs": [
-            "region record. Authority of the ATA below."
+            "region record."
           ]
         },
         {
           "name": "operator_payment",
           "docs": [
-            "created idempotently."
+            "the handler, so a re-owned ATA can't block the region's trades."
           ],
           "writable": true
         },
@@ -1478,14 +1475,6 @@
           "signer": true
         },
         {
-          "name": "payer",
-          "docs": [
-            "Whoever fronts rent for the refund account if it needs creating."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
           "name": "offer",
           "writable": true,
           "pda": {
@@ -1564,20 +1553,12 @@
         {
           "name": "offeror_payment",
           "docs": [
-            "created idempotently."
+            "the handler."
           ],
           "writable": true
         },
         {
           "name": "payment_token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -4936,15 +4917,6 @@
           "signer": true
         },
         {
-          "name": "payer",
-          "docs": [
-            "Whoever fronts rent for the bidder's refund account if it needs",
-            "creating."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
           "name": "share_listing",
           "pda": {
             "seeds": [
@@ -5056,20 +5028,12 @@
         {
           "name": "offeror_payment",
           "docs": [
-            "created idempotently, so a closed account can't strand the refund."
+            "the handler, so a re-owned ATA can't leave the offer stuck open."
           ],
           "writable": true
         },
         {
           "name": "payment_token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -6467,17 +6431,17 @@
           }
         },
         {
-          "name": "lawyer",
-          "docs": [
-            "below."
-          ]
+          "name": "lawyer"
         },
         {
           "name": "lawyer_payment_account",
           "docs": [
-            "exist yet, so a closed account can't strand their costs."
+            "Any account of this mint the lawyer owns; needed only while costs are",
+            "still due. Not pinned to the ATA, so a re-owned one can't strand the",
+            "sweep."
           ],
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "treasury"
@@ -6485,20 +6449,12 @@
         {
           "name": "treasury_payment_account",
           "docs": [
-            "exist yet; the ATA program verifies the derivation."
+            "Any account of this mint the treasury owns."
           ],
           "writable": true
         },
         {
           "name": "payment_token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -7783,7 +7739,7 @@
         {
           "name": "treasury_token",
           "docs": [
-            "when one applies, and pinned to the derivation then."
+            "Any XCAV account the treasury owns; needed only when a slash applies."
           ],
           "writable": true,
           "optional": true
@@ -9581,6 +9537,11 @@
       "code": 6085,
       "name": "WrongCpiSigner",
       "msg": "Not this program's CPI signer PDA"
+    },
+    {
+      "code": 6086,
+      "name": "PayoutAccountMissing",
+      "msg": "Payout token account missing"
     }
   ],
   "types": [

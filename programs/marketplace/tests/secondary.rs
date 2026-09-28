@@ -159,7 +159,7 @@ fn relist_in_another_accepted_mint() {
         &[&buyer],
     );
     // 5 shares at 6 GBP, 1% seller fee, at six decimals, paid to the
-    // seller's associated account the buy creates.
+    // seller's associated account.
     assert_eq!(
         token_balance(&svm, &payment_ata(&seller.pubkey(), &gbp6_mint())),
         30_000_000 - 300_000
@@ -565,4 +565,64 @@ fn send_rejects_a_decoy_share_account() {
         investor_share_ata(0, &receiver.pubkey()),
     );
     fails_with(&mut svm, ix, sender, &[sender], "WrongTokenAccount");
+}
+
+// A region operator who re-owned their ATA can't block the region's trades:
+// the buyer pays the fee into any account the operator owns, and can't route
+// it anywhere else.
+#[test]
+fn buy_survives_a_reowned_operator_account() {
+    let (mut svm, admin, investors) = finalized_property();
+    let seller = &investors[1];
+    relist(&mut svm, seller, 0, 20);
+    let buyer = new_investor(&mut svm, &admin);
+    give_tgbp(&mut svm, &buyer.pubkey(), 150_000_000_000);
+    let operator = region_operator().pubkey();
+    reown_payment_ata(&mut svm, &operator, &tgbp_mint());
+
+    fails_with(
+        &mut svm,
+        buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 12, u64::MAX),
+        &buyer,
+        &[&buyer],
+        "ConstraintTokenOwner",
+    );
+    let own = fresh_payment_acc(&mut svm, &buyer.pubkey(), &tgbp_mint());
+    fails_with(
+        &mut svm,
+        buy_relisted_ix_paying(
+            &buyer.pubkey(),
+            0,
+            0,
+            &seller.pubkey(),
+            12,
+            u64::MAX,
+            tgbp_mint(),
+            tgbp_acc(&buyer.pubkey()),
+            own,
+        ),
+        &buyer,
+        &[&buyer],
+        "ConstraintTokenOwner",
+    );
+
+    let fresh = fresh_payment_acc(&mut svm, &operator, &tgbp_mint());
+    ok_with_budget(
+        &mut svm,
+        buy_relisted_ix_paying(
+            &buyer.pubkey(),
+            0,
+            0,
+            &seller.pubkey(),
+            12,
+            u64::MAX,
+            tgbp_mint(),
+            tgbp_acc(&buyer.pubkey()),
+            fresh,
+        ),
+        &buyer,
+        &[&buyer],
+    );
+    assert_eq!(token_balance(&svm, &fresh), 964_800_000);
+    assert_eq!(share_listing_of(&svm, 0).amount, 8);
 }

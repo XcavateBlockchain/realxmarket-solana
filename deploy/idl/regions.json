@@ -293,10 +293,11 @@
     {
       "name": "claim_open_region",
       "docs": [
-        "Claim an open region seat, bonding the configured share of XCAV supply plus the region's",
-        "location deposits, capped by the caller's `max_deposit`. First-come and",
-        "RegionalOperator-only; the incumbent may also call this to renew, paying",
-        "only the difference if the bond has moved since they last bonded."
+        "Claim an open region seat, bonding the configured share of XCAV supply",
+        "plus the region's location deposits, capped by the caller's",
+        "`max_deposit`. First-come and RegionalOperator-only; the incumbent may",
+        "also call this to renew, paying only the difference if the bond has",
+        "moved since they last bonded."
       ],
       "discriminator": [
         207,
@@ -398,23 +399,15 @@
         {
           "name": "old_owner_token",
           "docs": [
-            "returned collateral on a takeover. Created idempotently (the ATA",
-            "program verifies the derivation), so an outgoing operator closing their",
-            "account can't make the seat uncontestable. Unused when the incumbent",
-            "renews (they are refunded through `new_operator_token` instead)."
+            "Any XCAV account the outgoing operator owns; takes their collateral",
+            "back on a takeover, omitted when the incumbent renews. Not pinned to",
+            "the ATA, so they can't make the seat uncontestable by re-owning it."
           ],
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -529,22 +522,15 @@
         {
           "name": "proposer_token",
           "docs": [
-            "bond when clearing a stale passed state. Created idempotently (the ATA",
-            "program verifies the derivation), so a closed account can't wedge the",
-            "crank and lock the region forever."
+            "Any XCAV account the proposer owns; needed only when clearing a stale",
+            "passed state, which refunds the bond into it. Not pinned to the ATA,",
+            "so a re-owned one can't lock the region."
           ],
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -971,21 +957,15 @@
         {
           "name": "proposer_token",
           "docs": [
-            "bond on a rejection. Created idempotently (the ATA program verifies the",
-            "derivation), so a proposer closing their account can't wedge the crank."
+            "Any XCAV account the proposer owns; needed only on a rejection, which",
+            "refunds the bond into it. Not pinned to the ATA, so a re-owned one",
+            "can't wedge the crank."
           ],
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "token_program"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -2348,6 +2328,11 @@
       "code": 6029,
       "name": "InvalidRegionName",
       "msg": "Invalid region name"
+    },
+    {
+      "code": 6030,
+      "name": "RefundAccountMissing",
+      "msg": "Refund token account missing"
     }
   ],
   "types": [

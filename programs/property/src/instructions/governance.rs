@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create as CreateAta};
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::constants::{
@@ -733,8 +732,6 @@ pub fn vote_on_challenge_handler(
 #[derive(Accounts)]
 #[instruction(asset_id: u64)]
 pub struct FinalizeChallenge<'info> {
-    /// The cranker also fronts rent for any payout account created along the
-    /// way.
     #[account(mut)]
     pub cranker: Signer<'info>,
 
@@ -792,50 +789,37 @@ pub struct FinalizeChallenge<'info> {
     )]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// CHECK: the treasury owner key from config; authority of the ATA
-    /// below.
+    /// CHECK: the treasury owner key from config.
     #[account(address = config.treasury @ PropertyError::InvalidConfig)]
     pub treasury: UncheckedAccount<'info>,
 
-    /// CHECK: the treasury's XCAV ATA, created here if it doesn't exist yet;
-    /// the ATA program verifies the derivation.
-    #[account(mut)]
-    pub treasury_token: UncheckedAccount<'info>,
+    /// Any XCAV account the treasury owns.
+    #[account(
+        mut,
+        token::mint = config.xcav_mint,
+        token::authority = treasury,
+    )]
+    pub treasury_token: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// CHECK: the challenger, from the challenge record; authority of the
-    /// ATA below.
+    /// CHECK: the challenger, from the challenge record.
     #[account(address = challenge.challenger @ PropertyError::WrongRentPayer)]
     pub challenger: UncheckedAccount<'info>,
 
-    /// CHECK: the challenger's XCAV ATA, created here if it doesn't exist
-    /// yet, so a closed account can't strand the refund.
-    #[account(mut)]
-    pub challenger_token: UncheckedAccount<'info>,
+    /// Any XCAV account the challenger owns. Not pinned to the ATA, so a
+    /// re-owned one can't strand the refund and freeze the seat's governance.
+    #[account(
+        mut,
+        token::mint = config.xcav_mint,
+        token::authority = challenger,
+    )]
+    pub challenger_token: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
 }
 
 impl<'info> FinalizeChallenge<'info> {
-    /// Create the ATA if needed and pay it `amount` XCAV from the vault.
-    fn pay_out(
-        &self,
-        owner: &UncheckedAccount<'info>,
-        token: &UncheckedAccount<'info>,
-        amount: u64,
-    ) -> Result<()> {
-        create_idempotent(CpiContext::new(
-            self.associated_token_program.key(),
-            CreateAta {
-                payer: self.cranker.to_account_info(),
-                associated_token: token.to_account_info(),
-                authority: owner.to_account_info(),
-                mint: self.xcav_mint.to_account_info(),
-                system_program: self.system_program.to_account_info(),
-                token_program: self.token_program.to_account_info(),
-            },
-        ))?;
+    /// Pay `amount` XCAV from the vault into `token`.
+    fn pay_out(&self, token: &InterfaceAccount<'info, TokenAccount>, amount: u64) -> Result<()> {
         release_from_vault(
             &self.token_program.to_account_info(),
             &self.vault.to_account_info(),
@@ -911,27 +895,18 @@ pub fn finalize_challenge_handler(ctx: Context<FinalizeChallenge>, asset_id: u64
             ctx.accounts.letting.governance.strikes = strikes;
         }
         if slashed > 0 {
-            ctx.accounts.pay_out(
-                &ctx.accounts.treasury,
-                &ctx.accounts.treasury_token,
-                slashed,
-            )?;
+            ctx.accounts
+                .pay_out(&ctx.accounts.treasury_token, slashed)?;
         }
     }
     if passed {
         // The stake goes back whether the agent was punished or had already
         // left the seat.
-        ctx.accounts.pay_out(
-            &ctx.accounts.challenger,
-            &ctx.accounts.challenger_token,
-            deposit,
-        )?;
+        ctx.accounts
+            .pay_out(&ctx.accounts.challenger_token, deposit)?;
     } else {
-        ctx.accounts.pay_out(
-            &ctx.accounts.treasury,
-            &ctx.accounts.treasury_token,
-            deposit,
-        )?;
+        ctx.accounts
+            .pay_out(&ctx.accounts.treasury_token, deposit)?;
     }
 
     ctx.accounts.letting.governance.active_challenge = 0;

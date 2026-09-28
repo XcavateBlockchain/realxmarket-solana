@@ -257,4 +257,7 @@ pub enum MarketplaceError {
     WrongIncomeLedger,
     #[msg("Not this program's CPI signer PDA")]
     WrongCpiSigner,
+    /// A payout is due but no token account for the payee was passed.
+    #[msg("Payout token account missing")]
+    PayoutAccountMissing,
 }

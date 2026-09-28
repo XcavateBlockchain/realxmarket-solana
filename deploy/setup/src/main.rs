@@ -27,7 +27,6 @@ use xcavate_whitelist::state::{ComplianceStatus, Role};
 
 const SYS: Pubkey = anchor_lang::system_program::ID;
 const TOKEN: Pubkey = anchor_spl::token::ID;
-const ATA_PROGRAM: Pubkey = anchor_spl::associated_token::ID;
 
 const XCAV: u64 = 1_000_000_000; // 9 decimals
 
@@ -599,10 +598,8 @@ fn main() {
                         region_state: region_state_pda(REGION_ID),
                         proposal: proposal_pda(proposal_id),
                         proposer: operator.pubkey(),
-                        proposer_token: operator_xcav,
+                        proposer_token: Some(operator_xcav),
                         token_program: TOKEN,
-                        associated_token_program: ATA_PROGRAM,
-                        system_program: SYS,
                     }
                     .to_account_metas(None),
                 ),

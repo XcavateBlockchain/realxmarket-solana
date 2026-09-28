@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::{create_idempotent, AssociatedToken, Create as CreateAta};
 use anchor_spl::token_2022::spl_token_2022::{
     extension::StateWithExtensions,
     state::{Account as TokenAccountState, Mint as MintState},
@@ -264,28 +263,35 @@ pub struct SettleCancelledFees<'info> {
     )]
     pub listing_payment_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// CHECK: the payee lawyer, from the listing; authority of the ATA
-    /// below.
+    /// CHECK: the payee lawyer, from the listing.
     #[account(address = listing.spv_costs_payee @ MarketplaceError::WrongPayee)]
     pub lawyer: UncheckedAccount<'info>,
 
-    /// CHECK: the lawyer's ATA for this mint, created here if it doesn't
-    /// exist yet, so a closed account can't strand their costs.
-    #[account(mut)]
-    pub lawyer_payment_account: UncheckedAccount<'info>,
+    /// Any account of this mint the lawyer owns; needed only while costs are
+    /// still due. Not pinned to the ATA, so a re-owned one can't strand the
+    /// sweep.
+    #[account(
+        mut,
+        token::mint = payment_mint,
+        token::authority = lawyer,
+        token::token_program = payment_token_program,
+    )]
+    pub lawyer_payment_account: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
 
-    /// CHECK: the treasury owner key from config; authority of the ATA below.
+    /// CHECK: the treasury owner key from config.
     #[account(address = config.treasury @ MarketplaceError::InvalidConfig)]
     pub treasury: UncheckedAccount<'info>,
 
-    /// CHECK: the treasury's ATA for this mint, created here if it doesn't
-    /// exist yet; the ATA program verifies the derivation.
-    #[account(mut)]
-    pub treasury_payment_account: UncheckedAccount<'info>,
+    /// Any account of this mint the treasury owns.
+    #[account(
+        mut,
+        token::mint = payment_mint,
+        token::authority = treasury,
+        token::token_program = payment_token_program,
+    )]
+    pub treasury_payment_account: Box<InterfaceAccount<'info, TokenAccount>>,
 
     pub payment_token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn settle_cancelled_fees_handler(
@@ -322,24 +328,18 @@ pub fn settle_cancelled_fees_handler(
     let id_bytes = listing_id.to_le_bytes();
     let vault_seeds: &[&[u8]] = &[LISTING_VAULT_SEED, &id_bytes, &[ctx.bumps.listing_vault]];
     if lawyer_cut > 0 {
-        create_idempotent(CpiContext::new(
-            ctx.accounts.associated_token_program.key(),
-            CreateAta {
-                payer: ctx.accounts.cranker.to_account_info(),
-                associated_token: ctx.accounts.lawyer_payment_account.to_account_info(),
-                authority: ctx.accounts.lawyer.to_account_info(),
-                mint: ctx.accounts.payment_mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.payment_token_program.to_account_info(),
-            },
-        ))?;
+        let lawyer_payment_account = ctx
+            .accounts
+            .lawyer_payment_account
+            .as_ref()
+            .ok_or(MarketplaceError::PayoutAccountMissing)?;
         transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.payment_token_program.key(),
                 TransferChecked {
                     from: ctx.accounts.listing_payment_account.to_account_info(),
                     mint: ctx.accounts.payment_mint.to_account_info(),
-                    to: ctx.accounts.lawyer_payment_account.to_account_info(),
+                    to: lawyer_payment_account.to_account_info(),
                     authority: ctx.accounts.listing_vault.to_account_info(),
                 },
                 &[vault_seeds],
@@ -352,17 +352,6 @@ pub fn settle_cancelled_fees_handler(
         .checked_sub(lawyer_cut)
         .ok_or(MarketplaceError::Overflow)?;
     if treasury_cut > 0 {
-        create_idempotent(CpiContext::new(
-            ctx.accounts.associated_token_program.key(),
-            CreateAta {
-                payer: ctx.accounts.cranker.to_account_info(),
-                associated_token: ctx.accounts.treasury_payment_account.to_account_info(),
-                authority: ctx.accounts.treasury.to_account_info(),
-                mint: ctx.accounts.payment_mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.payment_token_program.to_account_info(),
-            },
-        ))?;
         transfer_checked(
             CpiContext::new_with_signer(
                 ctx.accounts.payment_token_program.key(),
@@ -563,10 +552,13 @@ pub struct WithdrawDepositUnsold<'info> {
     )]
     pub vault: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// CHECK: the treasury's XCAV account the slash lands in; only needed
-    /// when one applies, and pinned to the derivation then.
-    #[account(mut)]
-    pub treasury_token: Option<UncheckedAccount<'info>>,
+    /// Any XCAV account the treasury owns; needed only when a slash applies.
+    #[account(
+        mut,
+        token::mint = config.xcav_mint,
+        token::authority = config.treasury,
+    )]
+    pub treasury_token: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -615,16 +607,7 @@ pub fn withdraw_deposit_unsold_handler(
             .accounts
             .treasury_token
             .as_ref()
-            .ok_or(MarketplaceError::InvalidConfig)?;
-        require!(
-            treasury_token.key()
-                == anchor_spl::associated_token::get_associated_token_address_with_program_id(
-                    &ctx.accounts.config.treasury,
-                    &ctx.accounts.xcav_mint.key(),
-                    &ctx.accounts.token_program.key(),
-                ),
-            MarketplaceError::WrongTokenAccount
-        );
+            .ok_or(MarketplaceError::PayoutAccountMissing)?;
         release_from_vault(
             &ctx.accounts.token_program.to_account_info(),
             &ctx.accounts.vault.to_account_info(),

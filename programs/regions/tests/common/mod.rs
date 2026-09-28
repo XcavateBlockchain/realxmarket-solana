@@ -24,7 +24,7 @@ pub use solana_keypair::Keypair;
 pub use solana_signer::Signer;
 pub use xcavate_whitelist::state::Role;
 
-use anchor_lang::solana_program::instruction::Instruction;
+use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::solana_program::program_option::COption;
 use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::{InstructionData, ToAccountMetas};
@@ -113,8 +113,8 @@ pub fn xcav_mint() -> Pubkey {
     Pubkey::new_from_array([7u8; 32])
 }
 
-/// The owner's associated XCAV token account. A real ATA, since the refund
-/// paths recreate recipients' accounts idempotently at the canonical address.
+/// The owner's associated XCAV token account. A real ATA, so the tests can
+/// recreate it through the ATA program the way a cranker would.
 pub fn token_acc(owner: &Pubkey) -> Pubkey {
     anchor_spl::associated_token::get_associated_token_address(owner, &xcav_mint())
 }
@@ -482,6 +482,24 @@ pub fn finalize_ix(
     proposal_id: u64,
     proposer: &Pubkey,
 ) -> Instruction {
+    finalize_ix_to(
+        cranker,
+        region_id,
+        proposal_id,
+        proposer,
+        Some(token_acc(proposer)),
+    )
+}
+
+/// Finalize with an explicit refund account (any XCAV account the proposer
+/// owns), or none at all.
+pub fn finalize_ix_to(
+    cranker: &Pubkey,
+    region_id: u16,
+    proposal_id: u64,
+    proposer: &Pubkey,
+    proposer_token: Option<Pubkey>,
+) -> Instruction {
     Instruction::new_with_bytes(
         rid(),
         &regions::instruction::FinalizeRegionProposal { region_id }.data(),
@@ -493,10 +511,8 @@ pub fn finalize_ix(
             region_state: region_state(region_id),
             proposal: proposal_pda(proposal_id),
             proposer: *proposer,
-            proposer_token: token_acc(proposer),
+            proposer_token,
             token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: ATA_PROGRAM_ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
@@ -561,6 +577,24 @@ pub fn claim_open_region_ix_capped(
     old_owner: &Pubkey,
     max_deposit: u64,
 ) -> Instruction {
+    claim_open_region_ix_to(
+        new_operator,
+        region_id,
+        old_owner,
+        Some(token_acc(old_owner)),
+        max_deposit,
+    )
+}
+
+/// Take over with an explicit refund account for the outgoing operator, or
+/// none (what the incumbent passes when renewing).
+pub fn claim_open_region_ix_to(
+    new_operator: &Pubkey,
+    region_id: u16,
+    old_owner: &Pubkey,
+    old_owner_token: Option<Pubkey>,
+    max_deposit: u64,
+) -> Instruction {
     Instruction::new_with_bytes(
         rid(),
         &regions::instruction::ClaimOpenRegion {
@@ -577,10 +611,8 @@ pub fn claim_open_region_ix_capped(
             vault: vault(),
             region: region_pda(region_id),
             old_owner: *old_owner,
-            old_owner_token: token_acc(old_owner),
+            old_owner_token,
             token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: ATA_PROGRAM_ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
@@ -588,7 +620,7 @@ pub fn claim_open_region_ix_capped(
 
 /// Renew the incumbent's own open seat (only the bond difference moves).
 pub fn renew_region_ix(operator: &Pubkey, region_id: u16) -> Instruction {
-    claim_open_region_ix(operator, region_id, operator)
+    claim_open_region_ix_to(operator, region_id, operator, None, u64::MAX)
 }
 
 pub fn unlock_ix(voter: &Pubkey, proposal_id: u64) -> Instruction {
@@ -609,6 +641,17 @@ pub fn unlock_ix(voter: &Pubkey, proposal_id: u64) -> Instruction {
 }
 
 pub fn clear_ix(cranker: &Pubkey, region_id: u16, proposer: &Pubkey) -> Instruction {
+    clear_ix_to(cranker, region_id, proposer, Some(token_acc(proposer)))
+}
+
+/// Clear with an explicit refund account (any XCAV account the proposer
+/// owns), or none at all.
+pub fn clear_ix_to(
+    cranker: &Pubkey,
+    region_id: u16,
+    proposer: &Pubkey,
+    proposer_token: Option<Pubkey>,
+) -> Instruction {
     Instruction::new_with_bytes(
         rid(),
         &regions::instruction::ClearRegionState { region_id }.data(),
@@ -619,13 +662,47 @@ pub fn clear_ix(cranker: &Pubkey, region_id: u16, proposer: &Pubkey) -> Instruct
             vault: vault(),
             region_state: region_state(region_id),
             proposer: *proposer,
-            proposer_token: token_acc(proposer),
+            proposer_token,
             token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: ATA_PROGRAM_ID,
-            system_program: SYS,
         }
         .to_account_metas(None),
     )
+}
+
+/// The ATA program's `CreateIdempotent` for `wallet`'s XCAV account, paid by
+/// `payer`: what a cranker prepends when the recipient's account is gone.
+pub fn create_ata_ix(payer: &Pubkey, wallet: &Pubkey) -> Instruction {
+    Instruction::new_with_bytes(
+        ATA_PROGRAM_ID,
+        &[1],
+        vec![
+            AccountMeta::new(*payer, true),
+            AccountMeta::new(token_acc(wallet), false),
+            AccountMeta::new_readonly(*wallet, false),
+            AccountMeta::new_readonly(xcav_mint(), false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+        ],
+    )
+}
+
+/// Turn `wallet`'s associated XCAV account into one owned by a stranger, the
+/// way `SetAuthority(AccountOwner)` on a classic mint would.
+pub fn reown_token_acc(svm: &mut LiteSVM, wallet: &Pubkey) {
+    set_token_account(svm, token_acc(wallet), &Pubkey::new_unique(), 0);
+}
+
+/// A fresh, non-associated XCAV account owned by `owner`, the way a cranker
+/// creates one when the recipient's associated account is unusable.
+pub fn fresh_token_acc(svm: &mut LiteSVM, owner: &Pubkey) -> Pubkey {
+    let address = Pubkey::new_unique();
+    set_token_account(svm, address, owner, 0);
+    address
+}
+
+pub fn balance_at(svm: &LiteSVM, address: &Pubkey) -> u64 {
+    let acc = svm.get_account(address).unwrap();
+    SplAccount::unpack(&acc.data).unwrap().amount
 }
 
 /// Push the clock past the proposal voting window so finalize can run.

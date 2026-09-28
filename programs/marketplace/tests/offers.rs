@@ -767,3 +767,50 @@ fn accept_needs_the_real_mint_authority() {
     swap_account(&mut ix, mint_auth_pda(0), Pubkey::new_unique());
     fails_with_budget(&mut svm, ix, seller, &[seller], "WrongMintAuthority");
 }
+
+// A bidder who re-owned their ATA can't leave the offer stuck on the
+// listing: the seller refunds any account the bidder owns, and can't pocket
+// the bid instead.
+#[test]
+fn reject_survives_a_reowned_bidder_account() {
+    let (mut svm, admin, investors) = listed_property();
+    let seller = &investors[1];
+    let offeror = new_investor(&mut svm, &admin);
+    bid(&mut svm, &offeror, 10, BID);
+    reown_payment_ata(&mut svm, &offeror.pubkey(), &tgbp_mint());
+
+    fails_with(
+        &mut svm,
+        reject_offer_ix(&seller.pubkey(), 0, &offeror.pubkey(), 0, tgbp_mint()),
+        seller,
+        &[seller],
+        "ConstraintTokenOwner",
+    );
+    let own = fresh_payment_acc(&mut svm, &seller.pubkey(), &tgbp_mint());
+    fails_with(
+        &mut svm,
+        reject_offer_ix_to(&seller.pubkey(), 0, &offeror.pubkey(), 0, tgbp_mint(), own),
+        seller,
+        &[seller],
+        "ConstraintTokenOwner",
+    );
+
+    let fresh = fresh_payment_acc(&mut svm, &offeror.pubkey(), &tgbp_mint());
+    ok(
+        &mut svm,
+        reject_offer_ix_to(
+            &seller.pubkey(),
+            0,
+            &offeror.pubkey(),
+            0,
+            tgbp_mint(),
+            fresh,
+        ),
+        seller,
+        &[seller],
+    );
+    assert_eq!(token_balance(&svm, &fresh), 50_500_000_000);
+    assert!(svm
+        .get_account(&offer_pda(0, &offeror.pubkey()))
+        .is_none_or(|a| a.data.is_empty()));
+}

@@ -111,8 +111,18 @@ fn vote_challenge(svm: &mut LiteSVM, voter: &Keypair, id: u64, choice: VoteChoic
     );
 }
 
+// The cranker creates the payees' associated accounts first, the way a real
+// crank does when one is missing.
 fn finalize_challenge(svm: &mut LiteSVM, challenger: &Keypair, id: u64, agent: Option<&Pubkey>) {
     let cranker = funded(svm);
+    for wallet in [treasury(), challenger.pubkey()] {
+        ok(
+            svm,
+            create_xcav_ata_ix(&cranker.pubkey(), &wallet),
+            &cranker,
+            &[&cranker],
+        );
+    }
     ok(
         svm,
         finalize_challenge_ix(
@@ -125,6 +135,96 @@ fn finalize_challenge(svm: &mut LiteSVM, challenger: &Keypair, id: u64, agent: O
         ),
         &cranker,
         &[&cranker],
+    );
+}
+
+// A challenger who re-owned their ATA can't keep the challenge open and the
+// agent unslashable: the cranker refunds any account the challenger owns.
+#[test]
+fn passed_challenge_survives_reowned_challenger_token() {
+    let (mut svm, admin, agent) = gov_setup();
+    let challenger = new_holder(&mut svm, &admin, ASSET, 10);
+    give_xcav(&mut svm, &challenger.pubkey(), FUND_XCAV);
+    challenge(&mut svm, &challenger, 1);
+    let voter = new_holder(&mut svm, &admin, ASSET, 60);
+    vote_challenge(&mut svm, &voter, 1, VoteChoice::Yes, 60);
+    warp(&mut svm, VOTING_TIME + 1);
+
+    reown_xcav_ata(&mut svm, &challenger.pubkey());
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        create_xcav_ata_ix(&cranker.pubkey(), &treasury()),
+        &cranker,
+        &[&cranker],
+    );
+    fails_with(
+        &mut svm,
+        finalize_challenge_ix(
+            &cranker.pubkey(),
+            &challenger.pubkey(),
+            ASSET,
+            1,
+            Some(&agent.pubkey()),
+            &challenger.pubkey(),
+        ),
+        &cranker,
+        &[&cranker],
+        "ConstraintTokenOwner",
+    );
+
+    let fresh = fresh_xcav_acc(&mut svm, &challenger.pubkey());
+    ok(
+        &mut svm,
+        finalize_challenge_ix_to(
+            &cranker.pubkey(),
+            &challenger.pubkey(),
+            ASSET,
+            1,
+            Some(&agent.pubkey()),
+            &challenger.pubkey(),
+            fresh,
+        ),
+        &cranker,
+        &[&cranker],
+    );
+    assert_eq!(balance_at(&svm, &fresh), CHALLENGE_DEPOSIT);
+    assert_eq!(letting_of(&svm, ASSET).governance.strikes, 1);
+    assert_eq!(letting_of(&svm, ASSET).governance.active_challenge, 0);
+}
+
+// The refund account must belong to the challenger: a cranker can't route
+// the stake to themselves.
+#[test]
+fn finalize_challenge_refuses_a_foreign_refund_account() {
+    let (mut svm, admin, agent) = gov_setup();
+    let challenger = new_holder(&mut svm, &admin, ASSET, 10);
+    give_xcav(&mut svm, &challenger.pubkey(), FUND_XCAV);
+    challenge(&mut svm, &challenger, 1);
+    warp(&mut svm, VOTING_TIME + 1);
+
+    let cranker = funded(&mut svm);
+    ok(
+        &mut svm,
+        create_xcav_ata_ix(&cranker.pubkey(), &treasury()),
+        &cranker,
+        &[&cranker],
+    );
+    let own = fresh_xcav_acc(&mut svm, &cranker.pubkey());
+    fails_with(
+        &mut svm,
+        finalize_challenge_ix_to(
+            &cranker.pubkey(),
+            &challenger.pubkey(),
+            ASSET,
+            1,
+            Some(&agent.pubkey()),
+            &challenger.pubkey(),
+            own,
+        ),
+        &cranker,
+        &[&cranker],
+        "ConstraintTokenOwner",
     );
 }
 
