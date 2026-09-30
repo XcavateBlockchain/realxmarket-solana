@@ -28,7 +28,7 @@ use xcavate_whitelist::state::{ComplianceStatus, Role};
 const SYS: Pubkey = anchor_lang::system_program::ID;
 const TOKEN: Pubkey = anchor_spl::token::ID;
 
-const XCAV: u64 = 1_000_000_000; // 9 decimals
+const XCAV: u64 = 1_000_000; // 6 decimals
 
 /// How long a screening clears a wallet for. Sanctions lists change, so the
 /// record is dated and re-running the bootstrap renews it.

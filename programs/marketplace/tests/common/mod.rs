@@ -38,7 +38,7 @@ use marketplace::{
 };
 
 pub const SYS: Pubkey = anchor_lang::system_program::ID;
-pub const DECIMALS: u8 = 9;
+pub const DECIMALS: u8 = 6;
 pub const FUND_XCAV: u64 = 100_000_000_000;
 pub const LISTING_DEPOSIT: u64 = 1_000_000_000;
 pub const LAWYER_DEPOSIT: u64 = 500_000_000;

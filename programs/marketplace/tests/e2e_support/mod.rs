@@ -25,7 +25,7 @@ pub const AGENT_VOTING_TIME: i64 = 3_600;
 pub const PROPOSAL_VOTING_TIME: i64 = 3_600;
 pub const LOW_PROPOSAL: u64 = 100_000_000_000;
 pub const HIGH_PROPOSAL: u64 = 1_000_000_000_000;
-/// The 0.1% region bond at the 1,000 XCAV supply `set_mint` writes.
+/// The 0.1% region bond at the 1,000,000 XCAV supply `set_mint` writes.
 pub const REGION_BOND: u64 = 1_000_000_000;
 
 pub fn rid() -> Pubkey {

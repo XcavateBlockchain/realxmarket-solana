@@ -71,7 +71,7 @@ create_mint() { # name decimals
     echo "created mint $1 ($2 decimals)"
   fi
 }
-create_mint xcav-mint 9
+create_mint xcav-mint 6
 create_mint tgbp-mint 9
 create_mint tusdc-mint 6
 ata_of() { # mint owner-pubkey

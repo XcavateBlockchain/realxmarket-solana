@@ -40,7 +40,7 @@ use regions::{CONFIG_SEED, PROPOSAL_SEED, REGION_SEED, REGION_STATE_SEED, VAULT_
 
 pub const SYS: Pubkey = anchor_lang::system_program::ID;
 pub const DEPOSIT: u64 = 1_000_000_000;
-pub const DECIMALS: u8 = 9;
+pub const DECIMALS: u8 = 6;
 pub const FUND_XCAV: u64 = 100_000_000_000;
 pub const LOCATION_DEPOSIT: u64 = 50_000_000;
 pub const LISTING_DURATION: i64 = 100_000;
