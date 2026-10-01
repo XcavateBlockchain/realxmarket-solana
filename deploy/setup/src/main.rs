@@ -82,7 +82,7 @@ fn marketplace_params(
         // Full range so two test investors can buy a property out; tighten
         // via update_config when the frontend tests the cap.
         max_ownership_bps: 10_000,
-        claiming_time: 600,
+        claiming_time: 1_800,
         legal_process_time: 86_400,
         lawyer_voting_time: 600,
         min_voting_quorum_bps: 1_000,
