@@ -2250,6 +2250,7 @@ dependencies = [
  "proptest",
  "regions",
  "solana-account",
+ "solana-compute-budget-interface",
  "solana-keypair",
  "solana-message",
  "solana-signer",
@@ -2834,6 +2835,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.5",
+]
+
+[[package]]
+name = "realxhub"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "litesvm",
+ "regions",
+ "solana-account",
+ "solana-keypair",
+ "solana-message",
+ "solana-signer",
+ "solana-transaction",
+ "xcavate-whitelist",
 ]
 
 [[package]]

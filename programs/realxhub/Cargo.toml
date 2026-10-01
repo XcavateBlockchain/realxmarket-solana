@@ -1,12 +1,12 @@
 [package]
-name = "marketplace"
+name = "realxhub"
 version = "0.1.0"
-description = "Property listings, fractional share sales, and legal settlement for the realXmarket protocol"
+description = "Hub proposals, verification, and escrowed token purchases"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "marketplace"
+name = "realxhub"
 
 [features]
 default = []
@@ -19,7 +19,6 @@ anchor-debug = []
 custom-heap = []
 custom-panic = []
 
-
 [dependencies]
 anchor-lang = { workspace = true, features = ["init-if-needed"] }
 anchor-spl = { workspace = true }
@@ -27,16 +26,12 @@ xcavate-whitelist = { path = "../xcavate-whitelist", features = ["cpi"] }
 regions = { path = "../regions", features = ["no-entrypoint"] }
 
 [dev-dependencies]
-property = { path = "../property" }
 litesvm = { workspace = true }
 solana-message = { workspace = true }
 solana-transaction = { workspace = true }
 solana-signer = { workspace = true }
 solana-keypair = { workspace = true }
 solana-account = { workspace = true }
-solana-compute-budget-interface = { workspace = true }
-proptest = { workspace = true }
-
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

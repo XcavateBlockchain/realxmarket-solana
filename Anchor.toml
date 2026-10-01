@@ -6,10 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+realxhub = "HbHu1p5KJJsCehawX5NBdqZXuGzHyqyPAsZcYUUz21b"
 marketplace = "dj9Q3CpHvDHwexCbkgJ5APDx4JsTxPssNebkvP15g1T"
 property = "deCp9srk9C6P4BXJaFpjR5H6Jsm6DCq8AL2kk338dVq"
 regions = "5iupkzVtWxee48UXh3s615V9sXXuYjsSr61VPuduXdPc"
-xcavate-whitelist = "2vVARM46pPD4rcHdbXHnYA4vTGN14q6skQAzsQWcHUxn"
+xcavate-whitelist = "7TrzjKpdrEhnfhxuw8tWdH1sjxadazscsG5HXCDPLmaY"
 
 [provider]
 cluster = "localnet"

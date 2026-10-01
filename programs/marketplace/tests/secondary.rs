@@ -290,6 +290,10 @@ fn buying_own_listing_is_blocked() {
 
 #[test]
 fn buy_settles_income_for_both_sides() {
+    use solana_compute_budget_interface::ComputeBudgetInstruction;
+    use solana_message::{Message, VersionedMessage};
+    use solana_transaction::versioned::VersionedTransaction;
+
     let (mut svm, admin, investors) = finalized_property();
     svm.add_program(marketplace::PROPERTY_PROGRAM, &program_bytes("property"))
         .unwrap();
@@ -300,12 +304,22 @@ fn buy_settles_income_for_both_sides() {
     relist(&mut svm, seller, 0, 20);
     let buyer = new_investor(&mut svm, &admin);
     give_tgbp(&mut svm, &buyer.pubkey(), 100_000_000_000);
-    ok(
-        &mut svm,
+    // Two income settlements and the buyer's new token accounts can exceed
+    // the default budget, depending on the randomly generated PDA bumps.
+    let instructions = [
+        ComputeBudgetInstruction::set_compute_unit_limit(400_000),
         buy_relisted_ix(&buyer.pubkey(), 0, 0, &seller.pubkey(), 12, u64::MAX),
-        &buyer,
-        &[&buyer],
+    ];
+    svm.expire_blockhash();
+    let message = Message::new_with_blockhash(
+        &instructions,
+        Some(&buyer.pubkey()),
+        &svm.latest_blockhash(),
     );
+    let transaction =
+        VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[&buyer]).unwrap();
+    svm.send_transaction(transaction)
+        .expect("secondary purchase should settle both income accounts");
 
     // The seller banked 33 shares' worth at the pre-trade balance; the
     // buyer's checkpoint opened at the current accumulator with nothing
